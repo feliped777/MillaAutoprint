@@ -1,7 +1,7 @@
 let bancoDeArtes = [];
 
-// Elementos UI que restaram no seu HTML
-let fileLoader, imageGrid, mainContent, selectTamanhoAdesivo, selectTamanho, inputCopias, inputZoom, zoomValor;
+// Elementos UI conectados com o HTML atual
+let fileLoader, imageGrid, mainContent, selectTamanhoAdesivo, selectTamanho, inputPedido, inputCopias, inputZoom, zoomValor;
 
 // Inputs do painel de propriedades do Modal
 let textColorInput, textSizeInput, textValueInput, textFontSelect, textRotationInput;
@@ -18,20 +18,20 @@ function calcularLayout(mmAdesivo) {
     const folhaLargura = tipoFolha === 'A4' ? 210 : 148;
     const folhaAltura = tipoFolha === 'A4' ? 297 : 210;
 
-    // Configurações padrão
+    // Configurações padrão de margem
     let margemEsquerdaDireita = 15;
     let margemSuperiorInferior = 15;
-    let qrTamanhoMm = 12; // Mantido para consistência lógica interna do layout
+    let qrTamanhoMm = 12; // QR Code fixado em 12mm
 
     // Ajuste específico para 9cm (90mm)
     if (mmAdesivo === 90) {
         margemEsquerdaDireita = 10; 
     }
 
-    // Condição para o tamanho de 4CM (40mm)
+    // Ajuste específico para 4cm (40mm)
     if (mmAdesivo === 40) {
         margemSuperiorInferior = 12;
-        qrTamanhoMm = 10;
+        qrTamanhoMm = 10; // QR Code compacto para etiquetas pequenas
     }
 
     const gapMm = 3;
@@ -39,28 +39,44 @@ function calcularLayout(mmAdesivo) {
     const larguraUtil = folhaLargura - (margemEsquerdaDireita * 2);
     const alturaUtil = folhaAltura - (margemSuperiorInferior * 2);
 
-    // Colunas e linhas que cabem na folha
+    // Colunas e linhas máximas que cabem no papel
     const cols = Math.floor((larguraUtil + gapMm) / (mmAdesivo + gapMm));
     const rowsMaximas = Math.floor((alturaUtil + gapMm) / (mmAdesivo + gapMm));
 
-    // Como os controles de pedido foram removidos, o layout assume a grade padrão cheia
-    const totalPorFolha = cols * rowsMaximas; 
+    // Espaço dinâmico do QR Code no canto inferior direito
+    const areaDisponivelSemQR = alturaUtil - qrTamanhoMm - gapMm;
+    const rowsAcimaDoQR = Math.floor((areaDisponivelSemQR + gapMm) / (mmAdesivo + gapMm));
+    
+    const restoLarguraEsquerdaQR = larguraUtil - qrTamanhoMm - gapMm;
+    const colsAoLadoDoQR = Math.floor((restoLarguraEsquerdaQR + gapMm) / (mmAdesivo + gapMm));
+    const rowsNaFaixaDoQR = rowsMaximas - rowsAcimaDoQR;
+
+    // Ativa o layout híbrido com corte se couberem elementos ao lado do QR Code
+    const temSecaoInferior = colsAoLadoDoQR > 0 && rowsNaFaixaDoQR > 0 && (mmAdesivo <= 50);
+    let totalPorFolha = cols * rowsAcimaDoQR;
+    
+    if (temSecaoInferior) {
+        totalPorFolha += (colsAoLadoDoQR * rowsNaFaixaDoQR);
+    } else {
+        totalPorFolha = cols * rowsMaximas; 
+    }
 
     return {
-        folhaLargura, folhaAltura, cols, rowsMaximas, totalPorFolha, mmAdesivo, gapMm
+        folhaLargura, folhaAltura, cols, rowsAcimaDoQR,
+        colsAoLadoDoQR, rowsNaFaixaDoQR, totalPorFolha,
+        mmAdesivo, gapMm, qrTamanhoMm, temSecaoInferior, rowsMaximas
     };
 }
 
 function renderizarSistema() {
+    const numeroPedido = inputPedido ? inputPedido.value.trim() : '';
     const mmSelecionado = parseInt(selectTamanhoAdesivo.value) || 50;
     const layout = calcularLayout(mmSelecionado);
     
     imageGrid.innerHTML = '';
     mainContent.innerHTML = '';
 
-    if (bancoDeArtes.length === 0) {
-        return;
-    }
+    if (bancoDeArtes.length === 0) return;
 
     bancoDeArtes.forEach((img) => {
         // Renderizador das miniaturas laterais
@@ -82,10 +98,9 @@ function renderizarSistema() {
 
         // Processador de Multi-páginas
         const totalAdesivosPedidos = parseInt(inputCopias.value) || 1;
-        let adesivosCriados = 0;
-        let paginaIndex = 0;
+        let poolAdesivosCriados = 0;
 
-        while (adesivosCriados < totalAdesivosPedidos) {
+        while (poolAdesivosCriados < totalAdesivosPedidos) {
             const pageScaler = document.createElement('div');
             pageScaler.className = 'page-scaler';
 
@@ -95,24 +110,79 @@ function renderizarSistema() {
             printAreaNode.style.height = `${layout.folhaAltura}mm`;
             printAreaNode.onclick = () => abrirModalEdicao(img.id);
 
-            let adesivosRestantes = totalAdesivosPedidos - adesivosCriados;
+            let adesivosRestantes = totalAdesivosPedidos - poolAdesivosCriados;
 
-            // Layout Grade Padrão Limpa (Sem embutir QR Code dinâmico)
-            const gridPrincipal = document.createElement('div');
-            gridPrincipal.className = 'grid-superior';
-            gridPrincipal.style.gridTemplateColumns = `repeat(${layout.cols}, ${layout.mmAdesivo}mm)`;
-            gridPrincipal.style.gap = `${layout.gapMm}mm`;
+            if (layout.temSecaoInferior) {
+                // Layout Híbrido com Área reservada para QR Code no canto inferior direito
+                const gridSuperior = document.createElement('div');
+                gridSuperior.className = 'grid-superior';
+                gridSuperior.style.gridTemplateColumns = `repeat(${layout.cols}, ${layout.mmAdesivo}mm)`;
+                gridSuperior.style.gap = `${layout.gapMm}mm`;
 
-            const totaisAqui = Math.min(layout.cols * layout.rowsMaximas, adesivosRestantes);
-            for (let i = 0; i < totaisAqui; i++) {
-                gridPrincipal.appendChild(criarAdesivoElemento(img, layout.mmAdesivo));
+                const adesivosSuperior = Math.min(layout.cols * layout.rowsAcimaDoQR, adesivosRestantes);
+                for (let i = 0; i < adesivosSuperior; i++) {
+                    gridSuperior.appendChild(criarAdesivoElemento(img, layout.mmAdesivo));
+                }
+                poolAdesivosCriados += adesivosSuperior;
+                adesivosRestantes -= adesivosSuperior;
+
+                const gridInferior = document.createElement('div');
+                gridInferior.className = 'grid-inferior';
+                gridInferior.style.gap = `${layout.gapMm}mm`;
+                gridInferior.style.marginTop = `${layout.gapMm}mm`;
+
+                const containerEsquerda = document.createElement('div');
+                containerEsquerda.className = 'grid-inferior-imagens';
+                containerEsquerda.style.gridTemplateColumns = `repeat(${layout.colsAoLadoDoQR}, ${layout.mmAdesivo}mm)`;
+                containerEsquerda.style.gap = `${layout.gapMm}mm`;
+
+                const adesivosInferior = Math.min(layout.colsAoLadoDoQR * layout.rowsNaFaixaDoQR, adesivosRestantes);
+                for (let i = 0; i < adesivosInferior; i++) {
+                    containerEsquerda.appendChild(criarAdesivoElemento(img, layout.mmAdesivo));
+                }
+                poolAdesivosCriados += adesivosInferior;
+
+                gridInferior.appendChild(containerEsquerda);
+
+                const containerQR = document.createElement('div');
+                containerQR.className = 'qr-area-container';
+                containerQR.style.width = `${layout.qrTamanhoMm}mm`;
+                containerQR.style.height = `${layout.qrTamanhoMm}mm`;
+                
+                gridInferior.appendChild(containerQR);
+                printAreaNode.appendChild(gridSuperior);
+                printAreaNode.appendChild(gridInferior);
+
+                if (numeroPedido !== '') {
+                    gerarQRCodeSincrono(containerQR, numeroPedido, layout.qrTamanhoMm);
+                }
+
+            } else {
+                // Layout Grade Padrão sem cortes dinâmicos
+                const gridPrincipal = document.createElement('div');
+                gridPrincipal.className = 'grid-superior';
+                gridPrincipal.style.gridTemplateColumns = `repeat(${layout.cols}, ${layout.mmAdesivo}mm)`;
+                gridPrincipal.style.gap = `${layout.gapMm}mm`;
+
+                const totaisAqui = Math.min(layout.cols * layout.rowsMaximas, adesivosRestantes);
+                for (let i = 0; i < totaisAqui; i++) {
+                    gridPrincipal.appendChild(criarAdesivoElemento(img, layout.mmAdesivo));
+                }
+                poolAdesivosCriados += totaisAqui;
+                printAreaNode.appendChild(gridPrincipal);
+
+                if (numeroPedido !== '') {
+                    const containerQRFixo = document.createElement('div');
+                    containerQRFixo.className = 'qr-area-container-fixo';
+                    containerQRFixo.style.width = `${layout.qrTamanhoMm}mm`;
+                    containerQRFixo.style.height = `${layout.qrTamanhoMm}mm`;
+                    printAreaNode.appendChild(containerQRFixo);
+                    gerarQRCodeSincrono(containerQRFixo, numeroPedido, layout.qrTamanhoMm);
+                }
             }
-            adesivosCriados += totaisAqui;
-            printAreaNode.appendChild(gridPrincipal);
 
             pageScaler.appendChild(printAreaNode);
             mainContent.appendChild(pageScaler);
-            paginaIndex++;
         }
     });
 
@@ -131,6 +201,19 @@ function criarAdesivoElemento(img, mmDimensao) {
     sticker.appendChild(bg);
 
     return sticker;
+}
+
+function gerarQRCodeSincrono(container, texto, tamanhoMm) {
+    container.innerHTML = '';
+    const pxSize = Math.round(tamanhoMm * 3.77); 
+    new QRCode(container, {
+        text: texto,
+        width: pxSize * 0.8,
+        height: pxSize * 0.8,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+    });
 }
 
 function atualizarZoomVisual() {
@@ -335,13 +418,14 @@ function fecharModal() {
     };
 }
 
-// Inicialização segura ativada após o carregamento completo do HTML
+// Inicialização segura com suporte ao monitoramento do número do pedido
 document.addEventListener('DOMContentLoaded', () => {
     fileLoader = document.getElementById('fileLoader');
     imageGrid = document.getElementById('imageGrid');
     mainContent = document.getElementById('mainContent');
     selectTamanhoAdesivo = document.getElementById('selectTamanhoAdesivo');
     selectTamanho = document.getElementById('selectTamanho');
+    inputPedido = document.getElementById('inputPedido');
     inputCopias = document.getElementById('inputCopias');
     inputZoom = document.getElementById('inputZoom');
     zoomValor = document.getElementById('zoomValor');
@@ -366,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 id: idUnico,
                 name: nomeSemExtensao,
                 url: urlTemporaria,
-                layout: [] // Inicializa vazio para inclusão manual via botão "+"
+                layout: [] 
             });
         }
 
@@ -375,8 +459,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     inputZoom.addEventListener('input', atualizarZoomVisual);
-    [selectTamanho, selectTamanhoAdesivo, inputCopias].forEach(el => el.addEventListener('change', renderizarSistema));
-    inputCopias.addEventListener('input', renderizarSistema);
+    [selectTamanho, selectTamanhoAdesivo, inputPedido, inputCopias].forEach(el => {
+        if (el) el.addEventListener('change', renderizarSistema);
+    });
+    
+    if (inputPedido) inputPedido.addEventListener('input', renderizarSistema);
+    if (inputCopias) inputCopias.addEventListener('input', renderizarSistema);
 
     textValueInput.addEventListener('input', (e) => {
         if (!itemSelecionado) return;
