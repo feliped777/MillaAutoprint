@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+    <!--Autor: Felipe Dias Gomes
+        Contato: felipedias777@gmail.com-->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mila Autoprint | Sistema de Personalização</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+    <script src="script.js" defer></script>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="logo-container">
+            <img src="ImagensMila/logo.jpg" alt="Mila Personalizados" class="app-logo">
+            <h1>Mila Autoprint</h1>
+            <p>Gerenciador de Impressão</p>
+        </div>
+        
+        <hr class="divisor">
+
+
+       <h2>1. Carregar e Buscar Artes</h2>
+        <div class="search-box" style="display: flex; flex-direction: column; gap: 10px;">
+            <label class="btn-upload">
+                ✨ Carregar Imagens da Pasta
+                <!-- O input fica aqui dentro, mas invisível para o usuário -->
+                <input type="file" id="fileLoader" multiple accept="image/*" style="display: none;">
+            </label>
+           
+        </div>
+        
+        <div class="image-grid" id="imageGrid">
+    <!-- Deixe vazio. O JS vai preencher sem interferência de textos estáticos -->
+</div>
+        <div class="input-group" style="margin-top: 10px;">
+            <label style="display: flex; justify-content: space-between;">
+                <span>🔍 Zoom da Pré-visualização</span>
+                <span id="zoomValor">100%</span>
+            </label>
+            <input type="range" id="inputZoom" min="50" max="200" value="100" step="5" style="cursor: pointer;">
+        </div>
+
+     <!--   <h2>2. Dados da Personalização</h2>
+        <div class="input-group">
+            <label>Nome do Aluno</label>
+            <input type="text" id="inputNome" placeholder="Ex: João Silva">
+        </div>
+        
+        <div class="input-group">
+            <label>Idade</label>
+            <input type="number" id="inputIdade" placeholder="Ex: 7">
+        </div>
+        
+        <div class="input-group">
+            <label>Série / Ano</label>
+            <input type="text" id="inputSerie" placeholder="Ex: 2º Ano B">
+        </div>
+        
+        <div class="input-group">
+            <label>Escola</label>
+            <input type="text" id="inputEscola" placeholder="Ex: Colégio Passo a Passo">
+        </div>
+-->
+        <h2>3. Configuração da Folha</h2>
+        <div class="input-group">
+            <label>Tamanho da Folha</label>
+            <select id="selectTamanho">
+                <option value="A4">A4 (Padrão)</option>
+                <option value="A5">A5 (Metade)</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <label>Tamanho do Adesivo/Etiqueta</label>
+            <select id="selectTamanhoAdesivo">
+                <option value="40">4 cm (Etiq. Pequena)</option>
+                <option value="50" selected>5 cm (Padrão Redondo)</option>
+                <option value="70">7 cm (Etiq. Caderno Grande)</option>
+                <option value="90">9 cm (Tamanho Grande)</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <label>Quantidade Máxima de Cópias</label>
+            <input type="number" id="inputCopias" value="30" min="1">
+        </div>
+        
+        <h2>4. Controle de Pedido</h2>
+        <div class="input-group">
+            <label>Número do Pedido</label>
+            <input type="text" id="inputPedido" placeholder="Ex: 10254">
+        </div>
+
+        <button class="btn-print" onclick="executarImpressao()">Imprimir Arte</button>
+    </div>
+
+    <div class="main-content" id="mainContent">
+        <p id="previewPlaceholder" style="color: #7f8c8d; font-style: italic;">
+            Carregue as artes para visualizar as páginas de impressão.
+        </p>
+    </div>
+
+    <!-- MODAL DE ESTILIZAÇÃO EM TEMPO REAL -->
+    <div id="editModal" class="zoom-modal">
+        <div class="modal-container" style="width: 95vw; height: 90vh;">
+            <div class="modal-sidebar" style="width: 320px;">
+                <h3>Gerenciar Parâmetros</h3>
+                <p style="font-size: 0.75rem; color: #666; margin-bottom: 10px;">Clique em um texto na imagem para editá-lo.</p>
+                
+                <div class="input-group" style="flex-direction: row; gap: 5px;">
+                    <input type="text" id="novoParametroNome" placeholder="Nome do novo campo..." style="padding: 6px;">
+                    <button onclick="adicionarParametroLivre()" style="padding: 6px 10px; background: var(--gold-primary); border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">+</button>
+                </div>
+
+                <hr class="divisor">
+
+                <div id="painelPropriedades" style="display: none; flex-direction: column; gap: 12px;">
+                    <h4 id="lblItemSelecionado" style="font-size: 0.85rem; color: var(--gold-dark);">Item: Nenhum</h4>
+                    
+                    <div class="input-group">
+                        <label>Texto do Campo</label>
+                        <input type="text" id="editTextoValor">
+                    </div>
+
+                    <div class="input-group">
+                        <label>Fonte do Texto</label>
+                        <select id="editTextoFonte">
+                            <option value="Arial">Arial (Clássica)</option>
+                            <option value="'Times New Roman'">Times New Roman</option>
+                            <option value="'Courier New'">Courier New</option>
+                            <option value="Comic Sans MS">Comic Sans</option>
+                            <option value="Impact">Impact</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Trebuchet MS">Trebuchet</option>
+                            <option value="Verdana">Verdana</option>
+                            <option value="'Brush Script MT'">Brush Script</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Rotação do Nome</label>
+                        <input type="range" id="editTextoRotacao" min="0" max="360" value="0" step="1">
+                    </div>
+
+                    <div class="input-group">
+                        <label>Cor do Texto</label>
+                        <input type="color" id="editTextoCor" value="#ffffff">
+                    </div>
+                    
+                    <div class="input-group">
+                        <label>Tamanho da Fonte (pt)</label>
+                        <input type="number" id="editTextoTamanho" min="6" max="72" value="12">
+                    </div>
+
+                    <button onclick="excluirTextoSelecionado()" style="padding: 10px; background: #d63031; border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; margin-top: 15px; width: 100%;">
+                        🗑️ Remover este Parâmetro
+                    </button>
+                </div>
+                
+                <button class="btn-print" onclick="fecharModal()" style="background: #2ecc71; margin-top: auto;">Aplicar em Lote</button>
+            </div>
+            
+            <div class="modal-preview" style="flex: 1; position: relative; background: #2c3e50;">
+                <div id="canvasEdicaoAdesivo" style="position: relative; background: white; box-shadow: 0 10px 20px rgba(0,0,0,0.3); overflow: hidden;">
+                    <!-- Preenchido via JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

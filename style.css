@@ -1,0 +1,268 @@
+* { 
+    box-sizing: border-box; 
+    margin: 0; 
+    padding: 0; 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+}
+
+:root {
+    --gold-primary: #d4af37;     
+    --gold-dark: #aa8416;        
+    --dark-text: #2c3e50;        
+    --panel-bg: #f9f6f0;         
+    --screen-bg: #e2ded5;        
+    --border-color: #e5e2da;     
+}
+
+body { 
+    background-color: var(--screen-bg); 
+    color: var(--dark-text); 
+    display: flex; 
+    height: 100vh; 
+}
+
+.sidebar { 
+    width: 350px; 
+    background: var(--panel-bg); 
+    border-right: 1px solid var(--border-color); 
+    padding: 20px; 
+    display: flex; 
+    flex-direction: column; 
+    gap: 15px; 
+    overflow-y: auto; 
+    flex-shrink: 0;
+}
+
+.logo-container { text-align: center; padding: 10px 0; }
+.app-logo { width: 85px; height: 85px; object-fit: contain; margin-bottom: 8px; border-radius: 8px; }
+.logo-container h1 { font-size: 1.4rem; color: var(--dark-text); font-weight: 800; }
+.logo-container p { font-size: 0.7rem; color: #8e8d8a; text-transform: uppercase; letter-spacing: 1.5px; }
+.divisor { border: 0; height: 1px; background: var(--border-color); margin: 5px 0; }
+
+h2 { font-size: 1rem; color: var(--dark-text); margin-top: 10px; border-left: 3px solid var(--gold-primary); padding-left: 8px; }
+.input-group { display: flex; flex-direction: column; gap: 5px; }
+label { font-size: 0.8rem; font-weight: 600; color: #666; }
+input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9rem; background-color: #ffffff; }
+
+.image-grid { 
+    display: grid; 
+    grid-template-columns: repeat(2, 1fr); /* 2 por linha */
+    gap: 12px; 
+    min-height: 140px; 
+    max-height: 350px; 
+    overflow-y: auto; 
+    border: 1px solid var(--border-color); 
+    padding: 12px; 
+    border-radius: 6px; 
+    background-color: #ffffff;
+    width: 100%;
+}
+
+.thumb-container { 
+    position: relative; 
+    width: 100%; 
+    aspect-ratio: 1 / 1; /* Força a ser um quadrado perfeito moderno automaticamente! */
+}
+
+.thumb-container .thumb { 
+    width: 100%; 
+    height: 100%; 
+    object-fit: cover; /* Corta as bordas excedentes e preenche o quadrado */
+    border-radius: 6px; 
+    cursor: pointer; 
+    border: 2px solid transparent; 
+}
+.thumb:hover {
+     border-color: var(--gold-primary); }
+
+.btn-delete {
+    position: absolute; 
+    top: 6px; 
+    right: 6px; 
+    background: rgba(231, 76, 60, 0.9); 
+    color: white;
+    border: none; 
+    border-radius: 50%; 
+    width: 22px; 
+    height: 22px; 
+    font-size: 12px; 
+    cursor: pointer;
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    z-index: 5;
+}
+
+.btn-upload { display: inline-block; width: 100%; padding: 12px; background: #ffffff; color: var(--gold-dark); border: 2px dashed var(--gold-primary); border-radius: 6px; text-align: center; font-size: 0.9rem; font-weight: bold; cursor: pointer; }
+.btn-print { background: var(--gold-primary); color: white; border: none; padding: 12px; font-size: 1rem; font-weight: bold; border-radius: 6px; cursor: pointer; margin-top: 15px; }
+.btn-print:hover { background: var(--gold-dark); }
+
+.main-content { 
+    flex: 1; padding: 40px; display: flex; flex-direction: column; 
+    align-items: center; justify-content: flex-start; gap: 40px; 
+    background: var(--screen-bg); overflow: auto; 
+}
+
+/* Container do Zoom estruturado para isolamento da folha física */
+.page-scaler {
+    position: relative;
+    display: block;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    flex-shrink: 0;
+    background: transparent;
+}
+
+/* Área da folha - Dimensões absolutas controladas dinamicamente via Inline em mm */
+.print-area {
+    background: white;
+    box-sizing: border-box;
+    padding: 15mm 15mm 15mm 15mm;
+    overflow: hidden;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: top left;
+    transform: none;
+}
+
+.grid-superior {
+    display: grid;
+    width: 100%;
+    justify-content: start;
+    align-content: start;
+}
+
+.grid-inferior {
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.grid-inferior-imagens {
+    display: grid;
+}
+
+/* QR Code com centralização milimétrica perfeita */
+.qr-area-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    border: 1px solid #eee;
+    padding: 1.5mm;
+    box-sizing: border-box;
+}
+
+.qr-area-container canvas, .qr-area-container img {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.qr-area-container-fixo {
+    position: absolute;
+    bottom: 15mm;
+    right: 15mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    border: 1px solid #eee;
+    padding: 1.5mm;
+    box-sizing: border-box;
+}
+.qr-area-container-fixo canvas, .qr-area-container-fixo img {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Adesivo Individual Refatorado */
+.sticker-container {
+    position: relative;
+    box-sizing: border-box;
+    overflow: hidden;
+    background: #fafafa;
+    border-radius: 2px;
+}
+
+.sticker-container .art-background {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0; left: 0;
+    z-index: 1;
+    object-fit: cover;
+}
+
+.sticker-static-text {
+    display: none; /* Opcional: Oculta textos HTML soltos nos adesivos do lote, pois eles já vêm desenhados na imagem! */
+}
+
+/* Modal UI */
+.zoom-modal {
+    display: none; position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background-color: rgba(0, 0, 0, 0.85); z-index: 1000;
+    justify-content: center; align-items: center;
+}
+.modal-container { display: flex; background: #ffffff; border-radius: 8px; overflow: hidden; }
+.modal-sidebar { width: 320px; padding: 20px; background: var(--panel-bg); display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.modal-preview { padding: 40px; background: #555; overflow: auto; display: flex; justify-content: center; align-items: center; }
+
+.draggable-text {
+    position: absolute; 
+    cursor: move; 
+    user-select: none; 
+    white-space: nowrap;
+    font-weight: bold; 
+    padding: 2px 6px; 
+    border: 1px dashed transparent; 
+    z-index: 10;
+    /* Removemos qualquer transform para alinhar a origem do mouse com a do desenho do Canvas (Left/Top) */
+    transform: none; 
+}
+.draggable-text.selected-item { border-color: var(--gold-primary); background: rgba(212, 175, 55, 0.2); }
+
+/* ============================================================
+   Media Print Limpo - Sem Substituição ou Redundâncias de px
+   ============================================================ */
+@media print {
+    @page {
+        size: portrait;
+        margin: 0 !important;
+    }
+    
+    html, body {
+        width: 100% !important;
+        height: 100% !important;
+        background: white !important;
+    }
+    
+    .sidebar, .zoom-modal { display: none !important; }
+    
+    .main-content { 
+        padding: 0 !important; 
+        margin: 0 !important;
+        background: white !important; 
+        overflow: visible !important;
+        display: block !important;
+    }
+    
+    .page-scaler {
+        width: auto !important;
+        height: auto !important;
+        box-shadow: none !important;
+        background: white !important;
+        page-break-after: always;
+        break-after: page;
+        display: block !important;
+    }
+    
+    .print-area { 
+        position: relative !important;
+        transform: none !important;
+        border: none !important; 
+        box-shadow: none !important;
+        background: white !important;
+    }
+}
