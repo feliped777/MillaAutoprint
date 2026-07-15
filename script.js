@@ -1,9 +1,21 @@
+// ==========================================
+// CONFIGURAÇÕES DO GOOGLE DEVELOPER CONSOLE
+// ==========================================
+const CLIENT_ID = '609261412025-53ncfn934c13nbecbdn2t8c9npvk7jsa.apps.googleusercontent.com';
+const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets';
+
+// Variáveis globais do sistema
+let inputCodBarrasManual;
 let bancoDeArtes = [];
+let googleAccessToken = null;
+let tokenClient = null;
+let planilhaBancoId = null; 
+let dicionarioGabaritos = {}; 
+let imagensSelecionadasIds = []; // Guarda qual arte o usuário clicou para trabalhar
+let demandasDeTrabalho = [];      // Lista estruturada: { id_arte, tamanhoMm, quantidade }
 
-// Elementos UI conectados com o HTML atual
+// Elementos UI conectados com o HTML
 let fileLoader, imageGrid, mainContent, selectTamanhoAdesivo, selectTamanho, inputPedido, inputCopias, inputZoom, zoomValor;
-
-// Inputs do painel de propriedades do Modal
 let textColorInput, textSizeInput, textValueInput, textFontSelect, textRotationInput;
 
 let itemSelecionado = null;
@@ -12,211 +24,632 @@ let offsetStartX = 0;
 let offsetStartY = 0;
 let imagemAtivaId = null;
 
-// Matemática estrutural baseada estritamente em milímetros
-function calcularLayout(mmAdesivo) {
-    const tipoFolha = selectTamanho.value;
-    const folhaLargura = tipoFolha === 'A4' ? 210 : 148;
-    const folhaAltura = tipoFolha === 'A4' ? 297 : 210;
+// ==========================================
+// BANCO DE DADOS (GOOGLE SHEETS)
+// ==========================================
 
-    // Configurações padrão de margem
-    let margemEsquerdaDireita = 15;
-    let margemSuperiorInferior = 15;
-    let qrTamanhoMm = 12; // QR Code fixado em 12mm
+// 1. Procura o banco ou cria um novo se não achar
+async function inicializarBancoSheets() {
+    if (!googleAccessToken) return;
 
-    // Ajuste específico para 9cm (90mm)
-    if (mmAdesivo === 90) {
-        margemEsquerdaDireita = 10; 
+    const query = "name = 'Mila_Autoprint_Banco' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false";
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id)`;
+
+    try {
+        const response = await fetch(url, { headers: { 'Authorization': `Bearer ${googleAccessToken}` } });
+        const dados = await response.json();
+
+        if (dados.files && dados.files.length > 0) {
+            planilhaBancoId = dados.files[0].id;
+            console.log("Banco de dados Sheets encontrado! ID:", planilhaBancoId);
+            await carregarGabaritosDoBanco();
+        } else {
+            console.log("Banco de dados não encontrado. Criando nova planilha no Drive...");
+            await criarNovoBancoSheets();
+        }
+    } catch (erro) {
+        console.error("Erro ao inicializar banco no Sheets:", erro);
+    }
+}
+
+// 2. Cria a planilha física no Drive do usuário com as colunas estruturadas
+async function criarNovoBancoSheets() {
+    const url = 'https://sheets.googleapis.com/v4/spreadsheets';
+    const payload = {
+        properties: { title: 'Mila_Autoprint_Banco' },
+        sheets: [{
+            properties: { title: 'Gabaritos' },
+            data: [{
+                startRow: 0,
+                startColumn: 0,
+                rowData: [{
+                    values: [
+                        { userEnteredValue: { stringValue: 'id_arte' } },
+                        { userEnteredValue: { stringValue: 'nome_arte' } },
+                        { userEnteredValue: { stringValue: 'coordenadas_json' } }
+                    ]
+                }]
+            }]
+        }]
+    };
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${googleAccessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        const planilhaCriada = await response.json();
+        planilhaBancoId = planilhaCriada.spreadsheetId;
+        console.log("Novo banco Sheets criado com sucesso! ID:", planilhaBancoId);
+    } catch (erro) {
+        console.error("Erro ao criar planilha de banco:", erro);
+    }
+}
+
+// 3. Puxa todas as linhas da planilha para a memória do sistema
+async function carregarGabaritosDoBanco() {
+    if (!planilhaBancoId) return;
+
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${planilhaBancoId}/values/Gabaritos!A2:C`;
+
+    try {
+        const response = await fetch(url, { headers: { 'Authorization': `Bearer ${googleAccessToken}` } });
+        const dados = await response.json();
+
+        dicionarioGabaritos = {}; 
+
+        if (dados.values && dados.values.length > 0) {
+            dados.values.forEach(linha => {
+                const idArte = linha[0];
+                const coordenadasString = linha[2];
+                
+                try {
+                    dicionarioGabaritos[idArte] = JSON.parse(coordenadasString);
+                } catch (e) {
+                    console.error("Erro ao processar JSON da linha da planilha:", e);
+                }
+            });
+            console.log("Gabaritos sincronizados em memória:", dicionarioGabaritos);
+        }
+    } catch (erro) {
+        console.error("Erro ao ler linhas do Sheets:", erro);
+    }
+}
+
+async function listarArtesDoGoogleDrive() {
+    if (!googleAccessToken) {
+        console.warn("Acesso ao Google não autorizado ainda.");
+        return;
     }
 
-    // Ajuste específico para 4cm (40mm)
-    if (mmAdesivo === 40) {
-        margemSuperiorInferior = 12;
-        qrTamanhoMm = 10; // QR Code compacto para etiquetas pequenas
+    await inicializarBancoSheets();
+
+    const query = "mimeType contains 'image/' and trashed = false";
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id, name)`;
+
+    try {
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${googleAccessToken}` }
+        });
+        const dados = await response.json();
+
+        if (dados.files && dados.files.length > 0) {
+            bancoDeArtes = [];
+            let carregamentos = [];
+
+            dados.files.forEach(arquivo => {
+                const urlImagemDrive = `https://lh3.googleusercontent.com/d/${arquivo.id}`;
+                const nomeLimpo = arquivo.name.replace(/\.[^/.]+$/, ""); 
+                const layoutSalvo = dicionarioGabaritos[arquivo.id] ? dicionarioGabaritos[arquivo.id] : [];
+
+                // Cria uma promessa para medir as dimensões reais da imagem
+                const promessaDimensao = new Promise((resolve) => {
+                    const tempImg = new Image();
+                    tempImg.src = urlImagemDrive;
+                    tempImg.onload = () => {
+                        // Calcula a proporção de aspecto (Largura / Altura)
+                        const proporcao = tempImg.naturalWidth / tempImg.naturalHeight;
+                        resolve({ proporcao });
+                    };
+                    tempImg.onerror = () => {
+                        resolve({ proporcao: 1 }); // Fallback caso dê erro
+                    };
+                });
+
+                carregamentos.push(promessaDimensao.then(dim => {
+                    bancoDeArtes.push({
+                        id: arquivo.id, 
+                        nome: nomeLimpo,
+                        url: urlImagemDrive,
+                        layout: layoutSalvo,
+                        proporcao: dim.proporcao // Guarda a proporção exata da arte!
+                    });
+                }));
+            });
+
+            // Aguarda todas as proporções de imagem serem carregadas
+            await Promise.all(carregamentos);
+
+            console.log("Catálogo do Drive carregado com proporções reais:", bancoDeArtes);
+            renderizarSistema();
+        } else {
+            console.log("Nenhuma imagem encontrada na raiz do Google Drive.");
+        }
+    } catch (erro) {
+        console.error("Erro ao listar arquivos do Drive:", erro);
+    }
+}
+
+async function salvarGabaritoNoSheets(idArte, nomeArte, layoutArray) {
+    if (!planilhaBancoId) {
+        console.warn("ID da planilha de banco não encontrado. Não foi possível salvar.");
+        return;
     }
 
-    const gapMm = 3;
+    // 1. Primeiro lemos as linhas existentes para saber se o ID já está cadastrado
+    const urlLeitura = `https://sheets.googleapis.com/v4/spreadsheets/${planilhaBancoId}/values/Gabaritos!A:A`;
+    
+    try {
+        const responseLeitura = await fetch(urlLeitura, {
+            headers: { 'Authorization': `Bearer ${googleAccessToken}` }
+        });
+        const dadosLeitura = await responseLeitura.json();
+        
+        let linhaEncontrada = -1;
+        if (dadosLeitura.values) {
+            // Procura o ID da arte na coluna A (lembrando que o Sheets começa em 1)
+            linhaEncontrada = dadosLeitura.values.findIndex(row => row[0] === idArte);
+        }
 
+        const payload = {
+            values: [
+                [idArte, nomeArte, JSON.stringify(layoutArray)]
+            ]
+        };
+
+        if (linhaEncontrada !== -1) {
+            // CASO JÁ EXISTA: Sobrescreve a linha exata (Ex: Gabaritos!A5:C5)
+            const numeroLinhaSheets = linhaEncontrada + 1; 
+            const urlUpdate = `https://sheets.googleapis.com/v4/spreadsheets/${planilhaBancoId}/values/Gabaritos!A${numeroLinhaSheets}:C${numeroLinhaSheets}?valueInputOption=USER_ENTERED`;
+            
+            await fetch(urlUpdate, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${googleAccessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            console.log(`Gabarito da arte "${nomeArte}" atualizado com sucesso na linha ${numeroLinhaSheets}!`);
+        } else {
+            // CASO SEJA NOVA: Adiciona uma nova linha no final da planilha
+            const urlAppend = `https://sheets.googleapis.com/v4/spreadsheets/${planilhaBancoId}/values/Gabaritos!A:C:append?valueInputOption=USER_ENTERED`;
+            
+            await fetch(urlAppend, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${googleAccessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            console.log(`Novo gabarito da arte "${nomeArte}" gravado com sucesso no Sheets!`);
+        }
+
+        // Atualiza em memória o dicionário local para renderizar imediatamente na tela
+        dicionarioGabaritos[idArte] = layoutArray;
+        
+        // Update local do layout da arte
+        const arteNoBanco = bancoDeArtes.find(img => img.id === idArte);
+        if (arteNoBanco) arteNoBanco.layout = layoutArray;
+
+    } catch (erro) {
+        console.error("Erro ao gerenciar salvamento no Sheets:", erro);
+    }
+}
+
+// ==========================================
+// FUNÇÕES DE IMPOSIÇÃO E CALIBRAÇÃO DE LAYOUT
+// ==========================================
+
+// Calcula o layout do papel baseado estritamente em milímetros
+function calcularLayout() {
+    const elTamanho = document.getElementById('selectTamanho');
+    const tamanhoFolha = elTamanho ? elTamanho.value : 'A4'; 
+    
+    let folhaLargura = 210;
+    let folhaAltura = 297;
+    
+    if (tamanhoFolha === 'A3') {
+        folhaLargura = 297;
+        folhaAltura = 420;
+    }
+    
+    // ====== CALIBRAÇÃO EXATA DO SOFTWARE DE CORTE ======
+    // Bolinhas de registro físicas continuam a exatos 7mm da borda para o sensor ler.
+    const margemRegistroPlotter = 7;
+    
+    // Diminuímos ligeiramente a margem de segurança de cálculo lateral para 13mm.
+    // Isso dá exatamente 184mm de área útil. Dois adesivos de 90mm (180mm) + gap (2mm) cabem perfeitamente lado a lado!
+    const margemEsquerdaDireita = 13; 
+    const margemSuperior = 15; 
+    
+    // Na base inferior, mantemos a folga segura para o QR Code de 8mm[cite: 3]
+    const margemInferior = 18; 
+    
     const larguraUtil = folhaLargura - (margemEsquerdaDireita * 2);
-    const alturaUtil = folhaAltura - (margemSuperiorInferior * 2);
-
-    // Colunas e linhas máximas que cabem no papel
-    const cols = Math.floor((larguraUtil + gapMm) / (mmAdesivo + gapMm));
-    const rowsMaximas = Math.floor((alturaUtil + gapMm) / (mmAdesivo + gapMm));
-
-    // Espaço dinâmico do QR Code no canto inferior direito
-    const areaDisponivelSemQR = alturaUtil - qrTamanhoMm - gapMm;
-    const rowsAcimaDoQR = Math.floor((areaDisponivelSemQR + gapMm) / (mmAdesivo + gapMm));
+    const alturaUtil = folhaAltura - margemSuperior - margemInferior;
     
-    const restoLarguraEsquerdaQR = larguraUtil - qrTamanhoMm - gapMm;
-    const colsAoLadoDoQR = Math.floor((restoLarguraEsquerdaQR + gapMm) / (mmAdesivo + gapMm));
-    const rowsNaFaixaDoQR = rowsMaximas - rowsAcimaDoQR;
-
-    // Ativa o layout híbrido com corte se couberem elementos ao lado do QR Code
-    const temSecaoInferior = colsAoLadoDoQR > 0 && rowsNaFaixaDoQR > 0 && (mmAdesivo <= 50);
-    let totalPorFolha = cols * rowsAcimaDoQR;
+    const gapMm = 2; // Espaçamento entre cada adesivo
     
-    if (temSecaoInferior) {
-        totalPorFolha += (colsAoLadoDoQR * rowsNaFaixaDoQR);
-    } else {
-        totalPorFolha = cols * rowsMaximas; 
-    }
-
     return {
-        folhaLargura, folhaAltura, cols, rowsAcimaDoQR,
-        colsAoLadoDoQR, rowsNaFaixaDoQR, totalPorFolha,
-        mmAdesivo, gapMm, qrTamanhoMm, temSecaoInferior, rowsMaximas
+        folhaLargura,
+        folhaAltura,
+        margemEsquerdaDireita,
+        margemSuperiorInferior: margemSuperior,
+        larguraUtil,
+        alturaUtil,
+        gapMm,
+        margemRegistroPlotter
     };
 }
 
 function renderizarSistema() {
-    const numeroPedido = inputPedido ? inputPedido.value.trim() : '';
-    const mmSelecionado = parseInt(selectTamanhoAdesivo.value) || 50;
-    const layout = calcularLayout(mmSelecionado);
+    const elementoLista = document.getElementById('txtListaAlunos');
+    const textoLista = elementoLista ? elementoLista.value.trim() : '';
     
-    imageGrid.innerHTML = '';
-    mainContent.innerHTML = '';
+    const elBusca = document.getElementById('searchInput') || document.getElementById('inputBusca');
+    const filtro = elBusca ? elBusca.value.toLowerCase() : '';
+    
+    const elPedido = inputPedido || document.getElementById('inputPedido');
+    const numeroPedido = elPedido ? elPedido.value.trim() : '';
+    
+    const elGrid = imageGrid || document.getElementById('imageGrid') || document.querySelector('.image-grid');
+    const elMain = mainContent || document.getElementById('mainContent') || document.querySelector('.main-content');
+    
+    if (elGrid) elGrid.innerHTML = '';
+    if (elMain) elMain.innerHTML = '';
 
-    if (bancoDeArtes.length === 0) return;
-
-    bancoDeArtes.forEach((img) => {
-        // Renderizador das miniaturas laterais
-        const containerThumb = document.createElement('div');
-        containerThumb.className = 'thumb-container';
+    // Divide os alunos por ponto e vírgula de forma ultra-segura
+    let listaAlunos = [];
+    if (textoLista) {
+        // Remove quebras de linha substituindo por espaços normais para juntar o texto quebrado pelo 'Enter'
+        const textoCorrido = textoLista.replace(/\r?\n|\r/g, " ");
         
-        const imgEl = document.createElement('img');
-        imgEl.src = img.url;
-        imgEl.className = 'thumb';
-        imgEl.onclick = () => abrirModalEdicao(img.id);
-        containerThumb.appendChild(imgEl);
-        
-        const btnDel = document.createElement('button');
-        btnDel.className = 'btn-delete';
-        btnDel.innerHTML = '&times;';
-        btnDel.onclick = (e) => { e.stopPropagation(); excluirImagem(img.id); };
-        containerThumb.appendChild(btnDel);
-        imageGrid.appendChild(containerThumb);
+        // Agora dividimos os alunos estritamente pelo ponto e vírgula ';'
+        listaAlunos = textoCorrido
+            .split(';')
+            .map(item => item.trim())
+            .filter(item => item !== "");
+    }
+    
+    // 1. Renderiza o catálogo lateral com busca
+    const filtradas = bancoDeArtes.filter(img => {
+        const nomeArte = (img && img.nome) ? img.nome.toLowerCase() : '';
+        return nomeArte.includes(filtro);
+    });
 
-        // Processador de Multi-páginas
-        const totalAdesivosPedidos = parseInt(inputCopias.value) || 1;
-        let poolAdesivosCriados = 0;
-
-        while (poolAdesivosCriados < totalAdesivosPedidos) {
-            const pageScaler = document.createElement('div');
-            pageScaler.className = 'page-scaler';
-
-            const printAreaNode = document.createElement('div');
-            printAreaNode.className = `print-area`;
-            printAreaNode.style.width = `${layout.folhaLargura}mm`;
-            printAreaNode.style.height = `${layout.folhaAltura}mm`;
-            printAreaNode.onclick = () => abrirModalEdicao(img.id);
-
-            let adesivosRestantes = totalAdesivosPedidos - poolAdesivosCriados;
-
-            if (layout.temSecaoInferior) {
-                // Layout Híbrido com Área reservada para QR Code no canto inferior direito
-                const gridSuperior = document.createElement('div');
-                gridSuperior.className = 'grid-superior';
-                gridSuperior.style.gridTemplateColumns = `repeat(${layout.cols}, ${layout.mmAdesivo}mm)`;
-                gridSuperior.style.gap = `${layout.gapMm}mm`;
-
-                const adesivosSuperior = Math.min(layout.cols * layout.rowsAcimaDoQR, adesivosRestantes);
-                for (let i = 0; i < adesivosSuperior; i++) {
-                    gridSuperior.appendChild(criarAdesivoElemento(img, layout.mmAdesivo));
-                }
-                poolAdesivosCriados += adesivosSuperior;
-                adesivosRestantes -= adesivosSuperior;
-
-                const gridInferior = document.createElement('div');
-                gridInferior.className = 'grid-inferior';
-                gridInferior.style.gap = `${layout.gapMm}mm`;
-                gridInferior.style.marginTop = `${layout.gapMm}mm`;
-
-                const containerEsquerda = document.createElement('div');
-                containerEsquerda.className = 'grid-inferior-imagens';
-                containerEsquerda.style.gridTemplateColumns = `repeat(${layout.colsAoLadoDoQR}, ${layout.mmAdesivo}mm)`;
-                containerEsquerda.style.gap = `${layout.gapMm}mm`;
-
-                const adesivosInferior = Math.min(layout.colsAoLadoDoQR * layout.rowsNaFaixaDoQR, adesivosRestantes);
-                for (let i = 0; i < adesivosInferior; i++) {
-                    containerEsquerda.appendChild(criarAdesivoElemento(img, layout.mmAdesivo));
-                }
-                poolAdesivosCriados += adesivosInferior;
-
-                gridInferior.appendChild(containerEsquerda);
-
-                const containerQR = document.createElement('div');
-                containerQR.className = 'qr-area-container';
-                containerQR.style.width = `${layout.qrTamanhoMm}mm`;
-                containerQR.style.height = `${layout.qrTamanhoMm}mm`;
+    if (filtradas.length === 0) {
+        if (elGrid) elGrid.innerHTML = `<p style="grid-column:span 3;text-align:center;color:#880;">Nenhuma arte encontrada.</p>`;
+    } else {
+        filtradas.forEach((img) => {
+            if (elGrid) {
+                const containerThumb = document.createElement('div');
+                const estaAtivaParaConfigurar = (img.id === window.imagemSelecionadaId);
+                containerThumb.className = `thumb-container ${estaAtivaParaConfigurar ? 'selected-thumb' : ''}`;
                 
-                gridInferior.appendChild(containerQR);
-                printAreaNode.appendChild(gridSuperior);
-                printAreaNode.appendChild(gridInferior);
+                const imgEl = document.createElement('img');
+                imgEl.src = img.url;
+                imgEl.className = 'thumb';
+                
+                // Clique simples: apenas seleciona para produção
+                imgEl.onclick = () => {
+                    window.imagemSelecionadaId = img.id;
+                    
+                    const temGabarito = img.layout && img.layout.length > 0;
+                    if (!temGabarito) {
+                        console.log(`Arte "${img.nome}" não possui gabarito. Abrindo editor...`);
+                        setTimeout(() => {
+                            abrirModalEdicao(img.id);
+                        }, 300);
+                    } else {
+                        console.log(`Arte "${img.nome}" selecionada. Possui gabarito ativo.`);
+                        renderizarSistema(); // Atualiza a seleção visual
+                    }
+                };
+                
+                // DUPLO CLIQUE: Abre o modal de edição à força para reajustar parâmetros salvos!
+                imgEl.ondblclick = () => {
+                    console.log(`Forçando reedição de gabarito para a arte: ${img.nome}`);
+                    abrirModalEdicao(img.id);
+                };
+                
+                containerThumb.appendChild(imgEl);
+                
+                const btnDel = document.createElement('button');
+                btnDel.className = 'btn-delete';
+                btnDel.innerHTML = '&times;';
+                btnDel.onclick = (e) => { e.stopPropagation(); excluirImagem(img.id); };
+                containerThumb.appendChild(btnDel);
+                elGrid.appendChild(containerThumb);
+            }
+        });
+    }
 
-                if (numeroPedido !== '') {
-                    gerarQRCodeSincrono(containerQR, numeroPedido, layout.qrTamanhoMm);
+    if (demandasDeTrabalho.length === 0) {
+        if (elMain) {
+            elMain.innerHTML = `
+                <div style="text-align: center; margin-top: 100px; color: #888;">
+                    <h3>Fila de Produção Vazia</h3>
+                    <p>Selecione as artes na barra lateral, defina o tamanho, a quantidade e clique em "Adicionar à Produção".</p>
+                </div>
+            `;
+        }
+        atualizarZoomVisual();
+        return;
+    }
+
+    // 3. DESDOBRA OS ADESIVOS MULTIPLICANDO AS CÓPIAS PARA CADA ALUNO DA LISTA
+    let filaAdesivosParaImprimir = [];
+
+    demandasDeTrabalho.forEach(demanda => {
+        const arteOriginal = bancoDeArtes.find(img => img.id === demanda.id_arte);
+        if (!arteOriginal) return;
+
+        const prop = arteOriginal.proporcao || 1;
+
+        let larguraReal, alturaReal;
+        if (prop >= 1) {
+            larguraReal = demanda.tamanhoMm;
+            alturaReal = demanda.tamanhoMm / prop;
+        } else {
+            alturaReal = demanda.tamanhoMm;
+            larguraReal = demanda.tamanhoMm * prop;
+        }
+
+        // Se o usuário colou alunos na lista, geramos a quantidade de cópias solicitada para CADA aluno!
+        if (listaAlunos.length > 0) {
+            listaAlunos.forEach(alunoTexto => {
+                for (let i = 0; i < demanda.quantidade; i++) {
+                    filaAdesivosParaImprimir.push({
+                        arte: arteOriginal,
+                        larguraMm: larguraReal,
+                        alturaMm: alturaReal,
+                        dadosAluno: alunoTexto
+                    });
                 }
+            });
+        } else {
+            // Se a lista de alunos estiver vazia, gera cópias com os textos padrões do Gabarito para preview!
+            for (let i = 0; i < demanda.quantidade; i++) {
+                filaAdesivosParaImprimir.push({
+                    arte: arteOriginal,
+                    larguraMm: larguraReal,
+                    alturaMm: alturaReal,
+                    dadosAluno: "Nome do Aluno - Série - Escola"
+                });
+            }
+        }
+    });
 
-            } else {
-                // Layout Grade Padrão sem cortes dinâmicos
-                const gridPrincipal = document.createElement('div');
-                gridPrincipal.className = 'grid-superior';
-                gridPrincipal.style.gridTemplateColumns = `repeat(${layout.cols}, ${layout.mmAdesivo}mm)`;
-                gridPrincipal.style.gap = `${layout.gapMm}mm`;
+    // Ordena do maior para o menor com base na área física para garantir o melhor aproveitamento de espaço
+    filaAdesivosParaImprimir.sort((a, b) => (b.larguraMm * b.alturaMm) - (a.larguraMm * a.alturaMm));
 
-                const totaisAqui = Math.min(layout.cols * layout.rowsMaximas, adesivosRestantes);
-                for (let i = 0; i < totaisAqui; i++) {
-                    gridPrincipal.appendChild(criarAdesivoElemento(img, layout.mmAdesivo));
+    // === ALGORITMO DE ENCAIXE 2D BIDIMENSIONAL INTELEGENTE ===
+    const layout = calcularLayout();
+    let paginasGeradas = [];
+
+    // Avisa o CSS de impressão qual é o formato de papel atual
+    document.body.classList.remove('print-A4', 'print-A3');
+    document.body.classList.add(`print-${layout.folhaLargura === 297 ? 'A3' : 'A4'}`);
+
+    while (filaAdesivosParaImprimir.length > 0) {
+        let paginaAtual = { elementos: [] };
+        
+        // Controlamos os espaços ocupados na folha para não sobrepor nada
+        let espacosOcupados = []; 
+
+        let indexAdesivo = 0;
+        while (indexAdesivo < filaAdesivosParaImprimir.length) {
+            const adesivo = filaAdesivosParaImprimir[indexAdesivo];
+            const larguraItem = adesivo.larguraMm;
+            const alturaItem = adesivo.alturaMm;
+            let posicionado = false;
+
+            // Varre a folha milímetro por milímetro de cima para baixo, da esquerda para a direita
+            for (let y = layout.margemSuperiorInferior; y <= layout.alturaUtil + layout.margemSuperiorInferior - alturaItem; y += 1) {
+                for (let x = layout.margemEsquerdaDireita; x <= layout.larguraUtil + layout.margemEsquerdaDireita - larguraItem; x += 1) {
+                    
+                    // Testa se o item cabe nesta coordenada sem colidir com nenhum outro já posicionado
+                    let colidiu = false;
+                    for (let o of espacosOcupados) {
+                        if (
+                            x < o.x2 + layout.gapMm && 
+                            x + larguraItem + layout.gapMm > o.x1 &&
+                            y < o.y2 + layout.gapMm && 
+                            y + alturaItem + layout.gapMm > o.y1
+                        ) {
+                            colidiu = true;
+                            break;
+                        }
+                    }
+
+                    // Se não colidir, posiciona o adesivo imediatamente nesta lacuna!
+                    if (!colidiu) {
+                        const novoElemento = {
+                            x: x,
+                            y: y,
+                            width: larguraItem,
+                            height: alturaItem,
+                            adesivo: adesivo
+                        };
+
+                        paginaAtual.elementos.push(novoElemento);
+                        
+                        // Registra o retângulo físico que este adesivo ocupou
+                        espacosOcupados.push({
+                            x1: x,
+                            y1: y,
+                            x2: x + larguraItem,
+                            y2: y + alturaItem
+                        });
+
+                        filaAdesivosParaImprimir.splice(indexAdesivo, 1); // Remove da fila de pendentes
+                        posicionado = true;
+                        break;
+                    }
                 }
-                poolAdesivosCriados += totaisAqui;
-                printAreaNode.appendChild(gridPrincipal);
-
-                if (numeroPedido !== '') {
-                    const containerQRFixo = document.createElement('div');
-                    containerQRFixo.className = 'qr-area-container-fixo';
-                    containerQRFixo.style.width = `${layout.qrTamanhoMm}mm`;
-                    containerQRFixo.style.height = `${layout.qrTamanhoMm}mm`;
-                    printAreaNode.appendChild(containerQRFixo);
-                    gerarQRCodeSincrono(containerQRFixo, numeroPedido, layout.qrTamanhoMm);
-                }
+                if (posicionado) break;
             }
 
-            pageScaler.appendChild(printAreaNode);
-            mainContent.appendChild(pageScaler);
+            // Se o adesivo não coube em nenhum espacinho desta página, passa para o próximo da fila para tentar encaixar
+            if (!posicionado) {
+                indexAdesivo++;
+            }
+        }
+
+        paginasGeradas.push(paginaAtual);
+    }
+
+    // 3. RENDERIZAÇÃO FÍSICA DAS FOLHAS
+    paginasGeradas.forEach((pagina, idxPagina) => {
+        const pageScaler = document.createElement('div');
+        pageScaler.className = 'page-scaler';
+
+        const printArea = document.createElement('div');
+        printArea.className = 'print-area';
+        printArea.style.width = `${layout.folhaLargura}mm`;
+        printArea.style.height = `${layout.folhaAltura}mm`;
+        printArea.style.position = 'relative';
+        printArea.style.backgroundColor = '#ffffff';
+        printArea.style.boxShadow = '0 0 10px rgba(0,0,0,0.15)';
+
+        // ====== MARCAS DE REGISTRO EM CÍRCULO (PLOTTER DE CORTE) ======
+        // Ajustado dinamicamente para o offset de 7mm configurado na plotter!
+        const offsetMm = `${layout.margemRegistroPlotter}mm`;
+        const posicoesPontos = [
+            { top: offsetMm, left: offsetMm },     // Superior Esquerdo
+            { top: offsetMm, right: offsetMm },    // Superior Direito
+            { bottom: offsetMm, left: offsetMm },  // Inferior Esquerdo
+            { bottom: offsetMm, right: offsetMm }  // Inferior Direito
+        ];
+
+        posicoesPontos.forEach(pos => {
+            const ponto = document.createElement('div');
+            ponto.className = 'marca-registro-plotter';
+            ponto.style.position = 'absolute';
+            ponto.style.width = '5mm';  // Diâmetro ideal para o sensor da plotter ler
+            ponto.style.height = '5mm';
+            ponto.style.backgroundColor = '#000000';
+            ponto.style.borderRadius = '50%'; // Força círculo perfeito
+            ponto.style.zIndex = '10';
+            
+            if (pos.top) ponto.style.top = pos.top;
+            if (pos.bottom) ponto.style.bottom = pos.bottom;
+            if (pos.left) ponto.style.left = pos.left;
+            if (pos.right) ponto.style.right = pos.right;
+
+            printArea.appendChild(ponto);
+        });
+
+        pagina.elementos.forEach(el => {
+            const sticker = criarAdesivoElementoLote(
+                el.adesivo.arte, 
+                el.width, 
+                el.height, 
+                el.adesivo.dadosAluno, 
+                numeroPedido
+            );
+            sticker.style.position = 'absolute';
+            sticker.style.left = `${el.x}mm`;
+            sticker.style.top = `${el.y}mm`;
+            
+            printArea.appendChild(sticker);
+        });
+
+        // ====== INJEÇÃO DO RODAPÉ CENTRALIZADO E COMPACTO (EXATAMENTE COMO O MODELO) ======
+        const rodapeCentralizado = document.createElement('div');
+        rodapeCentralizado.style.position = 'absolute';
+        
+        // Calibrado com o offset do QR Code a 8mm de distância do fundo da folha!
+        rodapeCentralizado.style.bottom = '8mm';
+        rodapeCentralizado.style.left = '30mm';  // Afastado dos pontos dos cantos
+        rodapeCentralizado.style.right = '30mm';
+        rodapeCentralizado.style.display = 'flex';
+        rodapeCentralizado.style.flexDirection = 'column';
+        rodapeCentralizado.style.alignItems = 'center';
+        rodapeCentralizado.style.justifyContent = 'center';
+        rodapeCentralizado.style.gap = '0.5mm';
+        rodapeCentralizado.style.zIndex = '10';
+
+        // Pega os valores digitados na tela
+        const elCodManual = document.getElementById('inputCodBarrasManual');
+        const valorCodManual = elCodManual ? elCodManual.value.trim() : '';
+        const valorPedido = numeroPedido || ''; // QR Code usa o número do pedido
+
+        // Lado a lado de forma super compacta no meio físico
+        const blocoConteudo = document.createElement('div');
+        blocoConteudo.style.display = 'flex';
+        blocoConteudo.style.alignItems = 'center';
+        blocoConteudo.style.justifyContent = 'center';
+        blocoConteudo.style.gap = '3mm'; // Espaçamento interno entre o QR e o Código de barras
+
+        // QR Code Container - Ajustado para exatamente 8mm como configurado no software!
+        const blocoQR = document.createElement('div');
+        blocoQR.style.width = '8mm';
+        blocoQR.style.height = '8mm';
+        blocoQR.style.backgroundColor = '#ffffff';
+        blocoQR.style.display = 'flex';
+        blocoQR.style.alignItems = 'center';
+        blocoQR.style.justifyContent = 'center';
+
+        // Código de Barras Manual + Texto de Identificação (Direita)
+        const blocoCodManual = document.createElement('div');
+        blocoCodManual.style.display = 'flex';
+        blocoCodManual.style.flexDirection = 'column';
+        blocoCodManual.style.alignItems = 'center';
+        blocoCodManual.style.justifyContent = 'center';
+
+        if (valorCodManual) {
+            blocoCodManual.innerHTML = `
+                <div style="font-family: 'Libre Barcode 39', 'Code 128', sans-serif; font-size: 13px; line-height: 1; margin: 0; padding: 0; color: #000;">*${valorCodManual}*</div>
+                <div style="font-size: 5.5px; font-weight: bold; font-family: monospace; line-height: 1; margin-top: 0.3mm;">${valorCodManual}</div>
+            `;
+        } else {
+            blocoCodManual.innerHTML = `<div style="font-size: 5.5px; color: #aaa; font-family: monospace;">N/D</div>`;
+        }
+
+        // Montagem do Rodapé
+        blocoConteudo.appendChild(blocoQR);
+        blocoConteudo.appendChild(blocoCodManual);
+        rodapeCentralizado.appendChild(blocoConteudo);
+        printArea.appendChild(rodapeCentralizado);
+
+        pageScaler.appendChild(printArea);
+        if (elMain) elMain.appendChild(pageScaler);
+
+        // Gera o QR Code com exatamente 8mm reais de leitura (28px de renderização física)
+        if (typeof QRCode !== 'undefined' && valorPedido) {
+            new QRCode(blocoQR, {
+                text: valorPedido,
+                width: 28,
+                height: 28,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: 1
+            });
         }
     });
 
     atualizarZoomVisual();
 }
 
-function criarAdesivoElemento(img, mmDimensao) {
-    const sticker = document.createElement('div');
-    sticker.className = 'sticker-container';
-    sticker.style.width = `${mmDimensao}mm`;
-    sticker.style.height = `${mmDimensao}mm`;
-
-    const bg = document.createElement('img');
-    bg.className = 'art-background';
-    bg.src = img.urlEditada || img.url; 
-    sticker.appendChild(bg);
-
-    return sticker;
-}
-
-function gerarQRCodeSincrono(container, texto, tamanhoMm) {
-    container.innerHTML = '';
-    const pxSize = Math.round(tamanhoMm * 3.77); 
-    new QRCode(container, {
-        text: texto,
-        width: pxSize * 0.8,
-        height: pxSize * 0.8,
-        colorDark: "#000000",
-        colorLight: "#ffffff",
-        correctLevel: QRCode.CorrectLevel.M
-    });
-}
-
 function atualizarZoomVisual() {
+    if (!inputZoom || !zoomValor) return;
     const vol = inputZoom.value;
     zoomValor.innerText = `${vol}%`;
     const scale = vol / 100;
@@ -236,11 +669,10 @@ function excluirImagem(id) {
     renderizarSistema();
 }
 
-function executarImpressao() {
-    window.print();
-}
+// ==========================================
+// MODAL DE EDIÇÃO DE GABARITO
+// ==========================================
 
-// Editor Avançado (Drag and Drop Computado)
 function abrirModalEdicao(idImagem) {
     imagemAtivaId = idImagem;
     const arte = bancoDeArtes.find(img => img.id === idImagem);
@@ -249,35 +681,18 @@ function abrirModalEdicao(idImagem) {
     const modal = document.getElementById('editModal');
     const canvas = document.getElementById('canvasEdicaoAdesivo');
     
+    if (!canvas) return; 
+
     canvas.style.width = '450px';
     canvas.style.height = '450px';
     canvas.innerHTML = `<img id="imgFundoModal" src="${arte.url}" style="width:100%; height:100%; object-fit:cover; position:absolute; top:0; left:0; z-index:1;">`;
-    
-    arte.layout.forEach(p => {
-        if (!p.texto || p.texto.trim() === '') return;
 
-        const elText = document.createElement('div');
-        elText.className = 'draggable-text';
-        elText.id = `drag-${p.id}`;
-        elText.innerText = p.texto;
-        elText.style.color = p.cor;
-        elText.style.fontSize = `${p.tamanho}px`;
-        elText.style.fontFamily = p.fonte;
-        elText.style.left = `${p.x}%`;
-        elText.style.top = `${p.y}%`;
-        elText.style.transform = `rotate(${p.rotacao || 0}deg)`;
-        
-        elText.addEventListener('mousedown', (e) => {
-            e.stopPropagation();
-            selecionarItem(p, elText);
-            arrastando = true;
-            
-            const rect = canvas.getBoundingClientRect();
-            offsetStartX = (e.clientX - rect.left) - elText.offsetLeft;
-            offsetStartY = (e.clientY - rect.top) - elText.offsetTop;
-        });
-        
-        canvas.appendChild(elText);
+    if (!arte.layout) {
+        arte.layout = [];
+    }
+
+    arte.layout.forEach(p => {
+        renderizarItemNoModalCanvas(p, arte);
     });
     
     canvas.onmousemove = (e) => {
@@ -296,8 +711,11 @@ function abrirModalEdicao(idImagem) {
         itemSelecionado.dados.y = (currentY / canvas.clientHeight) * 100;
     };
     
-    window.onmouseup = () => { arrastando = false; };
-    modal.style.display = 'flex';
+    window.onmouseup = () => { 
+        arrastando = false; 
+    };
+    
+    if (modal) modal.style.display = 'flex';
 }
 
 function selecionarItem(paramDados, elementoHtml) {
@@ -316,110 +734,327 @@ function selecionarItem(paramDados, elementoHtml) {
 }
 
 function excluirTextoSelecionado() {
-    if (!itemSelecionado) return;
-    itemSelecionado.dados.texto = '';
-    document.getElementById('painelPropriedades').style.display = 'none';
+    if (!itemSelecionado || !imagemAtivaId) {
+        alert("Selecione um parâmetro no painel ou clique sobre ele no adesivo para poder excluir.");
+        return;
+    }
+
+    const arte = bancoDeArtes.find(img => img.id === imagemAtivaId);
+    if (!arte) return;
+
+    // 1. Remove o parâmetro do array do layout em memória
+    arte.layout = arte.layout.filter(p => p.id !== itemSelecionado.dados.id);
+
+    // 2. Remove o elemento visualmente do canvas do modal
+    const elNoCanvas = document.getElementById(`drag-${itemSelecionado.dados.id}`);
+    if (elNoCanvas) {
+        elNoCanvas.remove();
+    }
+
+    // 3. Reseta o painel de propriedades e limpa a seleção
     itemSelecionado = null;
-    abrirModalEdicao(imagemAtivaId);
+    document.getElementById('painelPropriedades').style.display = 'none';
+    document.getElementById('lblItemSelecionado').innerText = 'Item: Nenhum';
+
+    console.log("Parâmetro removido com sucesso do gabarito temporário.");
 }
 
-function adicionarParametroLivre() {
-    const inputNomeCampo = document.getElementById('novoParametroNome');
-    const nomeVal = inputNomeCampo.value.trim();
-    if (nomeVal === '' || !imagemAtivaId) return;
+function adicionarCampoGabarito(tipoId, labelTexto) {
+    if (!imagemAtivaId) return;
     
     const arte = bancoDeArtes.find(img => img.id === imagemAtivaId);
     if (!arte) return;
 
-    arte.layout.push({
-        id: `custom-${Date.now()}`,
-        label: nomeVal,
-        texto: nomeVal,
-        x: 20, y: 20, cor: '#ffffff', tamanho: 12, fonte: 'Arial', rotacao: 0
-    });
-    
-    inputNomeCampo.value = '';
-    abrirModalEdicao(imagemAtivaId);
-}
-
-function fecharModal() {
-    const arte = bancoDeArtes.find(img => img.id === imagemAtivaId);
-    if (!arte) {
-        document.getElementById('editModal').style.display = 'none';
+    const jaExiste = arte.layout.some(p => p.id === tipoId);
+    if (jaExiste) {
+        alert(`O parâmetro "${labelTexto}" já foi adicionado ao gabarito desta arte.`);
         return;
     }
 
-    const canvasInvisivel = document.createElement('canvas');
-    canvasInvisivel.width = 1000;
-    canvasInvisivel.height = 1000;
-    const ctx = canvasInvisivel.getContext('2d');
-
-    const imagemFundo = new Image();
-    imagemFundo.crossOrigin = "anonymous";
-    imagemFundo.src = arte.url;
-
-    imagemFundo.onload = function() {
-        const imgLargura = imagemFundo.width;
-        const imgAltura = imagemFundo.height;
-        const canvasDimensao = 1000; 
-        
-        let cx, cy, cw, ch;
-
-        if (imgLargura > imgAltura) {
-            cw = imgAltura;
-            ch = imgAltura;
-            cx = (imgLargura - imgAltura) / 2;
-            cy = 0;
-        } else {
-            cw = imgLargura;
-            ch = imgLargura;
-            cx = 0;
-            cy = (imgAltura - imgLargura) / 2;
-        }
-
-        ctx.drawImage(imagemFundo, cx, cy, cw, ch, 0, 0, canvasDimensao, canvasDimensao);
-
-        arte.layout.forEach(p => {
-            if (!p.texto || p.texto.trim() === '') return;
-
-            ctx.save();
-            
-            const posX = (p.x / 100) * canvasDimensao;
-            const posY = (p.y / 100) * canvasDimensao;
-            const tamanhoRealFonte = Math.round(p.tamanho * (canvasDimensao / 450));
-            
-            ctx.font = `bold ${tamanhoRealFonte}px ${p.fonte || 'Arial'}`;
-            ctx.fillStyle = p.cor;
-            ctx.textAlign = "left"; 
-            ctx.textBaseline = "top"; 
-
-            ctx.translate(posX, posY);
-            
-            if (p.rotacao) {
-                ctx.rotate((p.rotacao * Math.PI) / 180);
-            }
-
-            ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
-            ctx.shadowBlur = 4;
-            ctx.lineWidth = Math.max(2, Math.round(tamanhoRealFonte * 0.12));
-            ctx.strokeStyle = "rgba(0,0,0,0.8)";
-            ctx.strokeText(p.texto, 0, 0);
-
-            ctx.fillText(p.texto, 0, 0);
-            ctx.restore();
-        });
-
-        arte.urlEditada = canvasInvisivel.toDataURL('image/png');
-
-        document.getElementById('editModal').style.display = 'none';
-        itemSelecionado = null;
-        imagemAtivaId = null;
-        renderizarSistema();
+    const novoElemento = {
+        id: tipoId,
+        tipo: tipoId.split('-')[0], 
+        label: labelTexto,
+        texto: labelTexto, 
+        x: 35, 
+        y: 35,
+        cor: '#ffffff',
+        tamanho: 14,
+        fonte: 'Arial',
+        rotacao: 0
     };
+
+    arte.layout.push(novoElemento);
+    renderizarItemNoModalCanvas(novoElemento, arte);
 }
 
-// Inicialização segura com suporte ao monitoramento do número do pedido
+function renderizarItemNoModalCanvas(param, arte) {
+    const canvas = document.getElementById('canvasEdicaoAdesivo');
+    if (!canvas) return;
+    
+    const el = document.createElement('div');
+    el.className = 'draggable-text';
+    el.id = `drag-${param.id}`;
+    el.innerText = param.label;
+    
+    if (param.tipo === 'txt') {
+        el.style.color = param.cor;
+        el.style.fontSize = `${param.tamanho}px`;
+        el.style.fontFamily = param.fonte;
+        el.style.backgroundColor = 'rgba(0,0,0,0.3)'; 
+        el.style.padding = '2px 6px';
+        el.style.borderRadius = '4px';
+    } else if (param.tipo === 'qr') {
+        el.style.backgroundColor = '#9b59b6';
+        el.style.color = '#fff';
+        el.style.padding = '10px';
+        el.style.fontWeight = 'bold';
+        el.style.border = '2px dashed #fff';
+        el.style.fontSize = '11px';
+    } else if (param.tipo === 'bar') {
+        el.style.backgroundColor = '#2c3e50';
+        el.style.color = '#fff';
+        el.style.padding = '6px 20px';
+        el.style.fontWeight = 'bold';
+        el.style.border = '2px dashed #fff';
+        el.style.fontSize = '10px';
+    }
+    
+    el.style.position = 'absolute';
+    el.style.left = `${(param.x / 100) * 450}px`;
+    el.style.top = `${(param.y / 100) * 450}px`;
+    el.style.transform = `rotate(${param.rotacao || 0}deg)`;
+    el.style.cursor = 'move';
+    el.style.zIndex = '10';
+
+    el.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        selecionarItem(param, el); 
+        arrastando = true;
+        
+        const rect = canvas.getBoundingClientRect();
+        offsetStartX = (e.clientX - rect.left) - el.offsetLeft;
+        offsetStartY = (e.clientY - rect.top) - el.offsetTop;
+    });
+    
+    canvas.appendChild(el);
+}
+
+async function fecharModal() {
+    const modal = document.getElementById('editModal');
+    const arte = bancoDeArtes.find(img => img.id === imagemAtivaId);
+    
+    if (arte) {
+        console.log("Salvando novo gabarito no banco de dados Sheets...");
+        
+        const btnSalvar = document.querySelector('#editModal button[onclick*="fecharModal"]');
+        if (btnSalvar) btnSalvar.innerText = "💾 Gravando...";
+
+        await salvarGabaritoNoSheets(arte.id, arte.nome, arte.layout);
+        
+        if (btnSalvar) btnSalvar.innerText = "Salvar e Fechar";
+    }
+
+    if (modal) modal.style.display = 'none';
+    
+    itemSelecionado = null;
+    imagemAtivaId = null;
+    
+    renderizarSistema();
+}
+
+// ==========================================
+// DESENHO INDIVIDUAL DO ADESIVO LOTE
+// ==========================================
+
+function criarAdesivoElementoLote(img, larguraMm, alturaMm, dadosAlunoString, numeroPedido) {
+    const textoSeguro = (typeof dadosAlunoString === 'string') ? dadosAlunoString : "";
+
+    const sticker = document.createElement('div');
+    sticker.className = 'sticker-container';
+    
+    sticker.style.setProperty('width', `${larguraMm}mm`, 'important');
+    sticker.style.setProperty('height', `${alturaMm}mm`, 'important');
+    sticker.style.position = 'relative';
+    sticker.style.overflow = 'hidden';
+
+    // ====== IDENTIFICAÇÃO DO FORMATO ======
+    const nomeArteMinusculo = (img.nome || "").toLowerCase();
+    
+    // Só aplica o formato redondo se:
+    // 1. A proporção for 1:1 (largura igual à altura)
+    // 2. E o nome do arquivo NÃO contiver termos como "tri", "triangulo", "quadrado" ou "ret"
+    const ehRedondo = (larguraMm === alturaMm) && 
+                      !nomeArteMinusculo.includes('tri') && 
+                      !nomeArteMinusculo.includes('quadrado');
+
+    if (ehRedondo) {
+        sticker.style.borderRadius = '50%'; // Garante visual redondo na tela
+    } else {
+        sticker.style.borderRadius = '0px'; // Mantém o formato original da imagem
+    }
+
+    const bg = document.createElement('img');
+    bg.className = 'art-background';
+    bg.src = img.url; 
+    bg.style.width = '100%';
+    bg.style.height = '100%';
+    sticker.appendChild(bg);
+
+    // ==========================================
+    // ✂️ INJEÇÃO DA FACA DE CORTE AUTOMÁTICA (CutContour)
+    // ==========================================
+    const linhaDeCorte = document.createElement('div');
+    linhaDeCorte.style.position = 'absolute';
+    linhaDeCorte.style.top = '0';
+    linhaDeCorte.style.left = '0';
+    linhaDeCorte.style.right = '0';
+    linhaDeCorte.style.bottom = '0';
+    linhaDeCorte.style.pointerEvents = 'none';
+    linhaDeCorte.style.zIndex = '99';
+
+    // Borda rosa de 0.25mm (Spot Color de corte)
+    linhaDeCorte.style.border = '0.25mm solid #FF00FF';
+    
+    if (ehRedondo) {
+        linhaDeCorte.style.borderRadius = '50%'; // Contorno circular perfeito
+    } else {
+        linhaDeCorte.style.borderRadius = '0px'; // Contorno reto (retângulos/quadrados/triângulos no limite do bloco)
+    }
+
+    sticker.appendChild(linhaDeCorte);
+
+    // ==========================================
+    // RENDERIZAÇÃO DOS TEXTOS DO ALUNO (LOTE)
+    // ==========================================
+    let partes = textoSeguro.split(/[-–/]/).map(p => p.trim());
+    const dadosTratados = {
+        'nome': partes[0] || '',
+        'serie': partes[1] || '',
+        'escola': partes[2] || ''
+    };
+
+    if (img.layout && Array.isArray(img.layout)) {
+        img.layout.forEach(p => {
+            const camada = document.createElement('div');
+            camada.style.position = 'absolute';
+            camada.style.left = `${p.x}%`;
+            camada.style.top = `${p.y}%`;
+            camada.style.transform = `rotate(${p.rotacao || 0}deg)`;
+            camada.style.zIndex = '5';
+            camada.style.whiteSpace = 'nowrap';
+            
+            if (p.tipo === 'txt') {
+                const idNormalizado = (p.id || "").toLowerCase();
+                const textoNormalizado = (p.label || p.texto || "").toLowerCase();
+                
+                let textoExibir = p.texto || p.label;
+
+                if (idNormalizado.includes('nome') || textoNormalizado.includes('nome')) {
+                    textoExibir = dadosTratados['nome'] || p.texto || p.label;
+                } else if (idNormalizado.includes('serie') || idNormalizado.includes('série') || textoNormalizado.includes('serie') || textoNormalizado.includes('série')) {
+                    textoExibir = dadosTratados['serie'] || p.texto || p.label;
+                } else if (idNormalizado.includes('escola') || textoNormalizado.includes('escola')) {
+                    textoExibir = dadosTratados['escola'] || p.texto || p.label;
+                }
+
+                camada.innerText = textoExibir;
+                camada.style.color = p.cor || '#ffffff';
+                camada.style.fontFamily = p.fonte || 'Arial';
+                camada.style.fontWeight = 'bold';
+                
+                const tamanhoOriginalPx = parseFloat(p.tamanho) || 14;
+                const proporcaoAltura = tamanhoOriginalPx / 450; 
+                const tamanhoMmEfetivo = alturaMm * proporcaoAltura; 
+
+                camada.style.fontSize = `${tamanhoMmEfetivo}mm`; 
+                camada.style.lineHeight = '1';
+                
+                sticker.appendChild(camada);
+            }
+        });
+    }
+    return sticker;
+}
+
+// ==========================================
+// SISTEMA DE FILA DE IMPRESSÃO (DEMANDAS)
+// ==========================================
+
+window.adicionarDemandaLote = function() {
+    if (!window.imagemSelecionadaId) {
+        alert("Selecione uma arte na barra lateral antes de configurar o tamanho!");
+        return;
+    }
+
+    const selectTamanhoAdesivoLocal = document.getElementById('selectTamanhoAdesivo');
+    const inputCopiasLocal = document.getElementById('inputCopias');
+    
+    const tamanhoMm = parseInt(selectTamanhoAdesivoLocal.value);
+    const quantidade = parseInt(inputCopiasLocal.value);
+    
+    if (isNaN(quantidade) || quantidade <= 0) {
+        alert("Por favor, digite uma quantidade de cópias válida.");
+        return;
+    }
+
+    const arte = bancoDeArtes.find(img => img.id === window.imagemSelecionadaId);
+    if (!arte) return;
+
+    // Procura se já existe exatamente essa mesma arte com esse mesmo tamanho na fila
+    const demandaExistente = demandasDeTrabalho.find(d => d.id_arte === arte.id && d.tamanhoMm === tamanhoMm);
+
+    if (demandaExistente) {
+        demandaExistente.quantidade += quantidade;
+    } else {
+        demandasDeTrabalho.push({
+            id_arte: arte.id,
+            nome_arte: arte.nome,
+            tamanhoMm: tamanhoMm,
+            quantidade: quantity = quantidade
+        });
+    }
+
+    console.log("Fila de produção atualizada:", demandasDeTrabalho);
+    atualizarFilaVisual();
+    renderizarSistema();
+};
+
+window.removerDemanda = function(index) {
+    demandasDeTrabalho.splice(index, 1);
+    atualizarFilaVisual();
+    renderizarSistema();
+};
+
+function atualizarFilaVisual() {
+    const container = document.getElementById('listaFilaImpressao');
+    if (!container) return;
+
+    if (demandasDeTrabalho.length === 0) {
+        container.innerHTML = `<em style="color:#aaa;">Nenhum item na fila de produção.</em>`;
+        return;
+    }
+
+    let html = '<ul style="list-style: none; padding: 0; margin: 0;">';
+    demandasDeTrabalho.forEach((demanda, index) => {
+        html += `
+            <li style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px dashed #eee;">
+                <span><strong>${demanda.quantidade}x</strong> - ${demanda.nome_arte} (${demanda.tamanhoMm / 10}cm)</span>
+                <button onclick="removerDemanda(${index})" style="background: none; border: none; color: #dc3545; cursor: pointer; font-weight: bold; font-size: 14px;">&times;</button>
+            </li>
+        `;
+    });
+    html += '</ul>';
+    container.innerHTML = html;
+}
+
+// ==========================================
+// INICIALIZAÇÃO DO DOM E EVENTOS UI
+// ==========================================
+
 document.addEventListener('DOMContentLoaded', () => {
+    inputCodBarrasManual = document.getElementById('inputCodBarrasManual');
+
     fileLoader = document.getElementById('fileLoader');
     imageGrid = document.getElementById('imageGrid');
     mainContent = document.getElementById('mainContent');
@@ -436,63 +1071,167 @@ document.addEventListener('DOMContentLoaded', () => {
     textFontSelect = document.getElementById('editTextoFonte');
     textRotationInput = document.getElementById('editTextoRotacao');
 
-    fileLoader.addEventListener('change', function(e) {
-        const arquivos = e.target.files;
-        if (arquivos.length === 0) return;
-
-        for (let i = 0; i < arquivos.length; i++) {
-            const arquivo = arquivos[i];
-            const urlTemporaria = URL.createObjectURL(arquivo);
-            const nomeSemExtensao = arquivo.name.replace(/\.[^/.]+$/, "");
-            const idUnico = Date.now() + i;
-
-            bancoDeArtes.push({
-                id: idUnico,
-                name: nomeSemExtensao,
-                url: urlTemporaria,
-                layout: [] 
-            });
-        }
-
-        fileLoader.value = '';
-        renderizarSistema();
-    });
-
-    inputZoom.addEventListener('input', atualizarZoomVisual);
+    if (inputZoom) inputZoom.addEventListener('input', atualizarZoomVisual);
+    
     [selectTamanho, selectTamanhoAdesivo, inputPedido, inputCopias].forEach(el => {
         if (el) el.addEventListener('change', renderizarSistema);
     });
     
     if (inputPedido) inputPedido.addEventListener('input', renderizarSistema);
     if (inputCopias) inputCopias.addEventListener('input', renderizarSistema);
+    if (inputCodBarrasManual) inputCodBarrasManual.addEventListener('input', renderizarSistema);
 
-    textValueInput.addEventListener('input', (e) => {
-        if (!itemSelecionado) return;
-        itemSelecionado.dados.texto = e.target.value;
-        itemSelecionado.elHtml.innerText = e.target.value;
-    });
+    if (textValueInput) {
+        textValueInput.addEventListener('input', (e) => {
+            if (!itemSelecionado) return;
+            itemSelecionado.dados.texto = e.target.value; 
+            if(itemSelecionado.elHtml) itemSelecionado.elHtml.innerText = e.target.value;
+        });
+    }
 
-    textColorInput.addEventListener('input', (e) => {
-        if (!itemSelecionado) return;
-        itemSelecionado.dados.cor = e.target.value;
-        itemSelecionado.elHtml.style.color = e.target.value;
-    });
+    if (textColorInput) {
+        textColorInput.addEventListener('input', (e) => {
+            if (!itemSelecionado) return;
+            itemSelecionado.dados.cor = e.target.value; 
+            if(itemSelecionado.elHtml) itemSelecionado.elHtml.style.color = e.target.value;
+        });
+    }
 
-    textSizeInput.addEventListener('input', (e) => {
-        if (!itemSelecionado) return;
-        itemSelecionado.dados.tamanho = parseInt(e.target.value) || 12;
-        itemSelecionado.elHtml.style.fontSize = `${itemSelecionado.dados.tamanho * 1.2}px`;
-    });
+    if (textSizeInput) {
+        textSizeInput.addEventListener('input', (e) => {
+            if (!itemSelecionado) return;
+            const tamanhoEfetivo = parseInt(e.target.value) || 12;
+            itemSelecionado.dados.tamanho = tamanhoEfetivo;
+            itemSelecionado.elHtml.style.fontSize = `${tamanhoEfetivo}px`;
+        });
+    }
 
-    textFontSelect.addEventListener('change', (e) => {
-        if (!itemSelecionado) return;
-        itemSelecionado.dados.fonte = e.target.value;
-        itemSelecionado.elHtml.style.fontFamily = e.target.value;
-    });
+    if (textFontSelect) {
+        textFontSelect.addEventListener('change', (e) => {
+            if (!itemSelecionado) return;
+            itemSelecionado.dados.fonte = e.target.value;
+            itemSelecionado.elHtml.style.fontFamily = e.target.value;
+        });
+    }
 
-    textRotationInput.addEventListener('input', (e) => {
-        if (!itemSelecionado) return;
-        itemSelecionado.dados.rotacao = parseInt(e.target.value) || 0;
-        itemSelecionado.elHtml.style.transform = `rotate(${itemSelecionado.dados.rotacao}deg)`;
-    });
+    if (textRotationInput) {
+        textRotationInput.addEventListener('input', (e) => {
+            if (!itemSelecionado) return;
+            itemSelecionado.dados.rotacao = parseInt(e.target.value) || 0;
+            itemSelecionado.elHtml.style.transform = `rotate(${itemSelecionado.dados.rotacao}deg)`;
+        });
+    }
+
+    const txtListaAlunos = document.getElementById('txtListaAlunos');
+    if (txtListaAlunos) {
+        txtListaAlunos.addEventListener('input', renderizarSistema);
+    }
+
+    const elBusca = document.getElementById('searchInput');
+    if (elBusca) {
+        elBusca.addEventListener('input', renderizarSistema);
+    }
+
+    window.inicializarGoogleAuth();
 });
+
+// ==========================================
+// GOOGLE AUTH E SESSÕES
+// ==========================================
+
+window.inicializarGoogleAuth = function() {
+    if (typeof google === 'undefined') {
+        console.error("A biblioteca do Google gapi/gsi não foi detectada no HTML.");
+        return;
+    }
+
+    tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: async (tokenResponse) => {
+            if (tokenResponse && tokenResponse.access_token) {
+                googleAccessToken = tokenResponse.access_token;
+                
+                const dadosSessao = {
+                    token: googleAccessToken,
+                    expiraEm: Date.now() + (tokenResponse.expires_in * 1000)
+                };
+                localStorage.setItem('mila_drive_sessao', JSON.stringify(dadosSessao));
+                
+                console.log("Autenticado no Google com sucesso e sessão salva!");
+                await listarArtesDoGoogleDrive();
+            }
+        },
+    });
+
+    verificarSessaoExistente();
+};
+
+async function verificarSessaoExistente() {
+    const sessaoSalva = localStorage.getItem('mila_drive_sessao');
+    if (!sessaoSalva) return;
+
+    try {
+        const dados = JSON.parse(sessaoSalva);
+        
+        if (dados.token && dados.expiraEm > (Date.now() + 30000)) {
+            googleAccessToken = dados.token;
+            console.log("Sessão recuperada automaticamente! Carregando arquivos...");
+            
+            const btnConectar = document.querySelector('.busca-container button') || document.querySelector('button[onclick*="conectarGoogleDrive"]');
+            if (btnConectar) {
+                btnConectar.innerHTML = "🔄 Conectado ao Google Drive";
+                btnConectar.style.backgroundColor = "#28a745"; 
+                btnConectar.style.color = "white";
+            }
+
+            await listarArtesDoGoogleDrive();
+        } else {
+            console.log("Sessão anterior expirada. Necessário novo login.");
+            localStorage.removeItem('mila_drive_sessao'); 
+        }
+    } catch (e) {
+        console.error("Erro ao ler sessão salva:", e);
+    }
+}
+
+window.conectarGoogleDrive = function() {
+    if (tokenClient) {
+        tokenClient.requestAccessToken({ prompt: 'consent' });
+    } else if (typeof google !== 'undefined') {
+        console.log("Inicializando autenticação atrasada...");
+        window.inicializarGoogleAuth();
+        if (tokenClient) {
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+        }
+    } else {
+        alert("O sistema do Google não pôde ser carregado. Verifique sua conexão com a internet.");
+    }
+};
+
+// ====== IMPRESSÃO INTELIGENTE SEM PERDA DE ESCALA (100%) ======
+window.executarImpressaoLote = function() {
+    const inputZoom = document.getElementById('inputZoom');
+    
+    // 1. Salva o zoom visual que você estava usando na tela
+    const zoomOriginal = inputZoom ? inputZoom.value : "100";
+    
+    // 2. Reseta o zoom visual para 100% temporariamente para não diminuir o PDF
+    if (inputZoom) {
+        inputZoom.value = "100";
+        atualizarZoomVisual();
+    }
+    
+    // 3. Abre o gerenciador de impressão do navegador com um pequeno delay para renderizar a escala
+    setTimeout(() => {
+        window.print();
+        
+        // 4. Retorna o zoom visual original na tela após a abertura do painel
+        setTimeout(() => {
+            if (inputZoom) {
+                inputZoom.value = zoomOriginal;
+                atualizarZoomVisual();
+            }
+        }, 500);
+    }, 150);
+};
