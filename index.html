@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
     <script src="script.js" defer></script>
+    <!-- Força o carregamento prioritário da biblioteca do Google -->
+    <script src="https://accounts.google.com/gsi/client"></script>
 </head>
 <body>
 
@@ -21,21 +23,50 @@
         
         <hr class="divisor">
 
-
-       <h2>1. Carregar e Buscar Artes</h2>
+        <h2>1. Carregar e Buscar Artes</h2>
         <div class="search-box" style="display: flex; flex-direction: column; gap: 10px;">
-            <label class="btn-upload">
-                ✨ Carregar Imagens da Pasta
-                <!-- O input fica aqui dentro, mas invisível para o usuário -->
-                <input type="file" id="fileLoader" multiple accept="image/*" style="display: none;">
+            <!-- Campo de Busca por Nome de Imagem -->
+            <div class="busca-container">
+                <input type="text" id="searchInput" placeholder="🔍 Buscar arte pelo nome..." autocomplete="off">
+            </div>
+            <label class="btn-upload" style="display: flex; flex-direction: column; gap: 5px;">
+                <button onclick="conectarGoogleDrive()" style="width: 100%; padding: 8px; background: #4285F4; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
+                    🔗 Conectar Google Drive
+                </button>
             </label>
-           
+        </div>
+
+        <!-- Painel de Gerenciamento de Demandas da Arte Selecionada -->
+        <div class="demandas-container" style="margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 8px; border: 1px solid #ddd;">
+            <h4 style="margin-top: 0;">📏 Configurar Tamanho & Cópias</h4>
+            
+            <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+                <select id="selectTamanhoAdesivo" style="flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+                    <option value="40">4 cm (40mm)</option>
+                    <option value="50">5 cm (50mm)</option>
+                    <option value="60">6 cm (60mm)</option>
+                    <option value="90">9 cm (90mm)</option>
+                </select>
+                
+                <input type="number" id="inputCopias" value="10" min="1" style="width: 70px; padding: 8px; border-radius: 4px; border: 1px solid #ccc; text-align: center;">
+            </div>
+            
+            <button onclick="adicionarDemandaLote()" style="width: 100%; padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                ➕ Adicionar à Produção
+            </button>
+
+            <!-- Lista visual do que já está na fila de impressão -->
+            <div id="listaFilaImpressao" style="margin-top: 15px; font-size: 12px; max-height: 150px; overflow-y: auto;">
+                <em style="color:#aaa;">Nenhum item na fila de produção.</em>
+            </div>
         </div>
         
-        <div class="image-grid" id="imageGrid">
-    <!-- Deixe vazio. O JS vai preencher sem interferência de textos estáticos -->
-</div>
-        <div class="input-group" style="margin-top: 10px;">
+        <!-- Grid de miniaturas -->
+        <div class="image-grid" id="imageGrid" style="margin-top: 15px;">
+            <!-- Preenchido via JS -->
+        </div>
+
+        <div class="input-group" style="margin-top: 15px;">
             <label style="display: flex; justify-content: space-between;">
                 <span>🔍 Zoom da Pré-visualização</span>
                 <span id="zoomValor">100%</span>
@@ -43,63 +74,44 @@
             <input type="range" id="inputZoom" min="50" max="200" value="100" step="5" style="cursor: pointer;">
         </div>
 
-     <!--   <h2>2. Dados da Personalização</h2>
-        <div class="input-group">
-            <label>Nome do Aluno</label>
-            <input type="text" id="inputNome" placeholder="Ex: João Silva">
+        <hr class="divisor">
+
+        <h2>2. Dados da Produção (Lote)</h2>
+        <div class="secao-producao-lote" style="display: flex; flex-direction: column; gap: 10px;">
+            <!-- Textarea para colar a lista direto do chat do cliente -->
+            <textarea id="txtListaAlunos" rows="5" placeholder="Cole os nomes aqui...&#10;João Silva - 2º Ano - Escola ABC;&#10;Maria Souza - 1º Ano - Escola ABC;" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-family: monospace; font-size: 11px; box-sizing: border-box; resize: vertical;"></textarea>
+            
+            <div class="controle-pedido" style="display: flex; flex-direction: column; gap: 4px;">
+                <label for="inputPedido" style="font-weight: bold; font-size: 13px;">Número do Pedido (QR Code):</label>
+                <input type="text" id="inputPedido" placeholder="Ex: 10254" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+            </div>
+
+            <div class="input-group" style="display: flex; flex-direction: column; gap: 4px;">
+                <label for="inputCodBarrasManual" style="font-weight: bold; font-size: 13px;">Cód. Barras (Manual):</label>
+                <input type="text" id="inputCodBarrasManual" placeholder="Digite o código manual..." style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+            </div>
         </div>
-        
-        <div class="input-group">
-            <label>Idade</label>
-            <input type="number" id="inputIdade" placeholder="Ex: 7">
-        </div>
-        
-        <div class="input-group">
-            <label>Série / Ano</label>
-            <input type="text" id="inputSerie" placeholder="Ex: 2º Ano B">
-        </div>
-        
-        <div class="input-group">
-            <label>Escola</label>
-            <input type="text" id="inputEscola" placeholder="Ex: Colégio Passo a Passo">
-        </div>
--->
+
+        <hr class="divisor">
+
         <h2>3. Configuração da Folha</h2>
-        <div class="input-group">
-            <label>Tamanho da Folha</label>
+        <div class="input-group" style="margin-bottom: 15px;">
+            <label>Tamanho da Folha Física</label>
             <select id="selectTamanho">
-                <option value="A4">A4 (Padrão)</option>
-                <option value="A5">A5 (Metade)</option>
-            </select>
-        </div>
-
-        <div class="input-group">
-            <label>Tamanho do Adesivo/Etiqueta</label>
-            <select id="selectTamanhoAdesivo">
-                <option value="40">4 cm (Etiq. Pequena)</option>
-                <option value="50" selected>5 cm (Padrão Redondo)</option>
-                <option value="70">7 cm (Etiq. Caderno Grande)</option>
-                <option value="90">9 cm (Tamanho Grande)</option>
-            </select>
-        </div>
-
-        <div class="input-group">
-            <label>Quantidade Máxima de Cópias</label>
-            <input type="number" id="inputCopias" value="30" min="1">
+    <option value="A4">A4 (Padrão)</option>
+    <option value="A3">A3 (Grande)</option>
+</select>
         </div>
         
-        <h2>4. Controle de Pedido</h2>
-        <div class="input-group">
-            <label>Número do Pedido</label>
-            <input type="text" id="inputPedido" placeholder="Ex: 10254">
-        </div>
-
-        <button class="btn-print" onclick="executarImpressao()">Imprimir Arte</button>
+        <!-- Botão de impressão nativo e limpo para o motor de PDF -->
+        <button class="btn-print" onclick="executarImpressaoLote()" style="background-color: #007bff; color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px;">
+    🖨️ Gerar PDF / Imprimir Lote
+</button>
     </div>
 
     <div class="main-content" id="mainContent">
         <p id="previewPlaceholder" style="color: #7f8c8d; font-style: italic;">
-            Carregue as artes para visualizar as páginas de impressão.
+            Selecione as artes e configure a fila de produção para visualizar as páginas.
         </p>
     </div>
 
@@ -108,13 +120,15 @@
         <div class="modal-container" style="width: 95vw; height: 90vh;">
             <div class="modal-sidebar" style="width: 320px;">
                 <h3>Gerenciar Parâmetros</h3>
-                <p style="font-size: 0.75rem; color: #666; margin-bottom: 10px;">Clique em um texto na imagem para editá-lo.</p>
+                <p style="font-size: 0.75rem; color: #666; margin-bottom: 10px;">Configure os campos dinâmicos da sua arte base.</p>
                 
-                <div class="input-group" style="flex-direction: row; gap: 5px;">
-                    <input type="text" id="novoParametroNome" placeholder="Nome do novo campo..." style="padding: 6px;">
-                    <button onclick="adicionarParametroLivre()" style="padding: 6px 10px; background: var(--gold-primary); border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">+</button>
+                <!-- BOTÕES DE PARÂMETROS PREDEFINIDOS -->
+                <div class="template-presets" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+                    <button onclick="adicionarCampoGabarito('txt-nome', 'Nome do Aluno')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Nome do Aluno</button>
+                    <button onclick="adicionarCampoGabarito('txt-serie', 'Série / Ano')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Série</button>
+                    <button onclick="adicionarCampoGabarito('txt-escola', 'Escola')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Escola</button>
                 </div>
-
+                
                 <hr class="divisor">
 
                 <div id="painelPropriedades" style="display: none; flex-direction: column; gap: 12px;">
@@ -155,12 +169,15 @@
                         <input type="number" id="editTextoTamanho" min="6" max="72" value="12">
                     </div>
 
-                    <button onclick="excluirTextoSelecionado()" style="padding: 10px; background: #d63031; border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; margin-top: 15px; width: 100%;">
+                    <!-- 🔴 BOTÃO REINTEGRADO AQUI: Permite limpar gabarito para artes sem texto -->
+                    <button onclick="excluirTextoSelecionado()" style="padding: 10px; background: #d63031; border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; margin-top: 10px; width: 100%;">
                         🗑️ Remover este Parâmetro
                     </button>
                 </div>
                 
-                <button class="btn-print" onclick="fecharModal()" style="background: #2ecc71; margin-top: auto;">Aplicar em Lote</button>
+                <button class="btn-print" onclick="fecharModal()" style="background: #2ecc71; margin-top: auto; padding: 12px; font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    💾 Salvar e Aplicar Gabarito
+                </button>
             </div>
             
             <div class="modal-preview" style="flex: 1; position: relative; background: #2c3e50;">
