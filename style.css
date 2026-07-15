@@ -178,20 +178,48 @@ input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radiu
 
 /* Adesivo Individual Refatorado */
 .sticker-container {
-    position: relative;
-    box-sizing: border-box;
-    overflow: hidden;
-    background: #fafafa;
-    border-radius: 2px;
+    position: absolute !important; /* Força o posicionamento milimétrico exato */
+    display: block !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    overflow: hidden !important;
 }
 
-.sticker-container .art-background {
-    width: 100%;
-    height: 100%;
-    position: absolute;
-    top: 0; left: 0;
-    z-index: 1;
-    object-fit: cover;
+/* Força o navegador a calcular o tamanho exato em milímetros incluindo bordas */
+* {
+    box-sizing: border-box !important;
+}
+
+/* Blindagem do container dos adesivos na folha */
+.sticker-container {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    display: inline-block !important;
+}
+
+/* Garante que a imagem preencha o container sem distorcer e sem NENHUM corte */
+.art-background {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    z-index: 1 !important;
+}
+
+/* Destaca a arte que está ativa no momento */
+.thumb-container.selected-thumb {
+    border: 3px solid #0056b3 !important;
+    background-color: rgba(0, 86, 179, 0.1);
+    transform: scale(1.03);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
 }
 
 .sticker-static-text {
@@ -258,11 +286,213 @@ input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radiu
         display: block !important;
     }
     
-    .print-area { 
-        position: relative !important;
-        transform: none !important;
-        border: none !important; 
-        box-shadow: none !important;
+    .print-area {
+    background: white !important;
+    box-sizing: border-box !important;
+    padding: 0 !important; 
+    overflow: hidden !important;
+    position: relative !important; /* Base para o posicionamento absoluto dos adesivos */
+    margin: 0 auto !important;
+}
+}
+
+/* Container e Campo de Busca */
+.busca-container {
+    margin: 10px 0;
+    padding: 0 5px;
+}
+
+.busca-container input {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    outline: none;
+    transition: all 0.3s ease;
+    box-sizing: border-box;
+}
+
+/* Efeito de foco quando o usuário clica para digitar */
+.busca-container input:focus {
+    border-color: #0056b3;
+    box-shadow: 0 0 5px rgba(0, 86, 179, 0.2);
+}
+
+/* Importação de fonte de código de barras padrão do Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap');
+
+/* Regras de Impressão de Alta Qualidade */
+@media print {
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
         background: white !important;
+    }
+    .page-scaler {
+        margin: 0 !important;
+        box-shadow: none !important;
+        page-break-after: always !important; /* Força cada folha a ser uma página física na impressora */
+    }
+    /* Esconde botões e barras que não devem ser impressos */
+    header, .sidebar, button, .busca-container, .demandas-container, #painelPropriedades {
+        display: none !important;
+    }
+}
+
+/* Estilo das Marcas de Registro */
+.marca-registro {
+    box-sizing: border-box;
+    opacity: 0.8;
+}
+
+/* Ajustes finos no container dos adesivos na folha */
+.sticker-container {
+    border-radius: 0 !important; /* Remove totalmente o corte circular */
+    box-shadow: none !important; /* Remove sombras para impressão limpa */
+    }
+
+    /* ==========================================
+   💥 REGRAS DE IMPRESSÃO PROFISSIONAL (1:1)
+   ========================================== */
+@media print {
+    /* 1. Remove absolutamente toda a interface da tela */
+    .sidebar, #editModal, .divisor, h2, h3, button, input, select, textarea, .logo-container, #previewPlaceholder {
+        display: none !important;
+    }
+
+    body, html {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        overflow: visible !important;
+    }
+
+    /* 2. Faz a área principal ocupar o papel inteiro */
+    .main-content {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: none !important;
+    }
+
+    /* 3. DESATIVAR ZOOM DA TELA: Garante escala real de 100% (milímetros físicos reais) */
+    .page-scaler {
+        transform: none !important; /* Ignora o zoom de pré-visualização da tela */
+        width: auto !important;
+        height: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        background: none !important;
+        display: block !important;
+        page-break-after: always !important;
+        break-after: page !important;
+    }
+
+    /* 4. A folha física de impressão */
+    .print-area {
+        position: relative !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        background-color: #ffffff !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        overflow: hidden !important; /* Previne páginas fantasma */
+    }
+
+    /* 5. Comanda o driver físico do PDF para escolher o papel correto */
+    body.print-A4 .print-area {
+        width: 210mm !important;
+        height: 297mm !important;
+    }
+    body.print-A3 .print-area {
+        width: 297mm !important;
+        height: 420mm !important;
+    }
+
+    /* Ajuste de página para remover cabeçalhos/rodapés do navegador (como data/url) */
+    @page {
+        margin: 0;
+    }
+}
+/* ==========================================
+   💥 REGRAS DE IMPRESSÃO PROFISSIONAL (1:1)
+   ========================================== */
+@media print {
+    /* 1. Oculta toda a interface e elementos de controle */
+    .sidebar, #editModal, .divisor, h2, h3, button, input, select, textarea, .logo-container, #previewPlaceholder {
+        display: none !important;
+    }
+
+    /* 2. Força o fundo branco e remove margens padrão do navegador */
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background-color: #ffffff !important;
+        width: 100% !important;
+        height: 100% !important;
+        overflow: visible !important;
+    }
+
+    /* 3. Prepara o container principal para a folha */
+    .main-content {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: none !important;
+    }
+
+    /* 4. Força o Page Scaler a ignorar o zoom da tela de visualização */
+    .page-scaler {
+        transform: scale(1) !important; /* Reseta o zoom visual do controle deslizante */
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        background: none !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
+        page-break-after: always !important;
+        break-after: page !important;
+    }
+
+    /* 5. A folha real de impressão em tamanho real físico */
+    .print-area {
+        position: relative !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        background-color: #ffffff !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        overflow: hidden !important; /* Evita vazamento de páginas fantasma */
+        box-sizing: border-box !important;
+    }
+
+    /* Define os tamanhos físicos de mídia reais com base na classe injetada */
+    body.print-A4 .print-area {
+        width: 210mm !important;
+        height: 297mm !important;
+    }
+    
+    body.print-A3 .print-area {
+        width: 297mm !important;
+        height: 420mm !important;
+    }
+
+    /* Força o papel da impressora / gerador de PDF a assumir tamanho sem margens chatas */
+    @page {
+        margin: 0;
     }
 }
