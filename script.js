@@ -1071,10 +1071,15 @@ document.addEventListener('DOMContentLoaded', () => {
     textFontSelect = document.getElementById('editTextoFonte');
     textRotationInput = document.getElementById('editTextoRotacao');
 
-    if (inputZoom) inputZoom.addEventListener('input', atualizarZoomVisual);
+    // ADICIONADO VERIFICAÇÕES DE SEGURANÇA (Evita o erro de "null" no GitHub Pages)
+    if (inputZoom) {
+        inputZoom.addEventListener('input', atualizarZoomVisual);
+    }
     
-    [selectTamanho, selectTamanhoAdesivo, inputPedido, inputCopias].forEach(el => {
-        if (el) el.addEventListener('change', renderizarSistema);
+    // Filtra apenas os elementos que realmente existem na tela antes de monitorar o 'change'
+    const elementosParaMonitorar = [selectTamanho, selectTamanhoAdesivo, inputPedido, inputCopias].filter(el => el !== null);
+    elementosParaMonitorar.forEach(el => {
+        el.addEventListener('change', renderizarSistema);
     });
     
     if (inputPedido) inputPedido.addEventListener('input', renderizarSistema);
@@ -1132,7 +1137,10 @@ document.addEventListener('DOMContentLoaded', () => {
         elBusca.addEventListener('input', renderizarSistema);
     }
 
-    window.inicializarGoogleAuth();
+    // Só inicializa o Google se a biblioteca carregar
+    if (typeof google !== 'undefined') {
+        window.inicializarGoogleAuth();
+    }
 });
 
 // ==========================================
@@ -1234,4 +1242,18 @@ window.executarImpressaoLote = function() {
             }
         }, 500);
     }, 150);
+};
+
+window.conectarGoogleDrive = function() {
+    if (tokenClient) {
+        tokenClient.requestAccessToken({ prompt: 'consent' });
+    } else if (typeof google !== 'undefined') {
+        console.log("Inicializando autenticação atrasada...");
+        window.inicializarGoogleAuth();
+        if (tokenClient) {
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+        }
+    } else {
+        alert("O sistema do Google não pôde ser carregado. Verifique sua conexão com a internet.");
+    }
 };
