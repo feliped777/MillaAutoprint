@@ -55,17 +55,22 @@
                 ➕ Adicionar à Produção
             </button>
 
-            <!-- Lista visual do que já está na fila de impressão -->
             <div id="listaFilaImpressao" style="margin-top: 15px; font-size: 12px; max-height: 150px; overflow-y: auto;">
                 <em style="color:#aaa;">Nenhum item na fila de produção.</em>
             </div>
         </div>
-        
-        <!-- Grid de miniaturas -->
-        <div class="image-grid" id="imageGrid" style="margin-top: 15px;">
-            <!-- Preenchido via JS -->
-        </div>
 
+        <!-- Controle de Agrupamento Dinâmico -->
+        <div style="margin-top: 15px; display: flex; gap: 5px;">
+            <button onclick="criarNovoGrupo()" style="flex: 1; padding: 8px; background-color: #f39c12; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;">
+                📁 + Criar Grupo de Imagens
+            </button>
+        </div>
+        
+        <!-- 🔓 A GAVETA EXCLUSIVA E BLINDADA DAS PASTAS -->
+        <div id="imageGrid" style="margin-top: 15px; display: flex; flex-direction: column; gap: 15px;"></div>
+
+        <!-- APENAS UM CONTROLE DE ZOOM AQUI -->
         <div class="input-group" style="margin-top: 15px;">
             <label style="display: flex; justify-content: space-between;">
                 <span>🔍 Zoom da Pré-visualização</span>
@@ -73,6 +78,8 @@
             </label>
             <input type="range" id="inputZoom" min="50" max="200" value="100" step="5" style="cursor: pointer;">
         </div>
+
+        
 
         <hr class="divisor">
 
@@ -123,11 +130,16 @@
                 <p style="font-size: 0.75rem; color: #666; margin-bottom: 10px;">Configure os campos dinâmicos da sua arte base.</p>
                 
                 <!-- BOTÕES DE PARÂMETROS PREDEFINIDOS -->
-                <div class="template-presets" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
-                    <button onclick="adicionarCampoGabarito('txt-nome', 'Nome do Aluno')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Nome do Aluno</button>
-                    <button onclick="adicionarCampoGabarito('txt-serie', 'Série / Ano')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Série</button>
-                    <button onclick="adicionarCampoGabarito('txt-escola', 'Escola')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Escola</button>
-                </div>
+              <div class="template-presets" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+    <button onclick="adicionarCampoGabarito('txt-nome', 'Nome do Aluno')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Nome do Aluno</button>
+    <button onclick="adicionarCampoGabarito('txt-serie', 'Série / Ano')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Série</button>
+    <button onclick="adicionarCampoGabarito('txt-escola', 'Escola')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Escola</button>
+    
+    <hr class="divisor">
+    <button onclick="adicionarCampoGabarito('faca-circulo', 'Faca Circular')" style="padding: 8px; background: #b534ad; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">✂️ + Faca Redonda</button>
+    <button onclick="adicionarCampoGabarito('faca-quadrado', 'Faca Quadrada')" style="padding: 8px; background: #b534ad; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">✂️ + Faca Quadrada</button>
+    <button onclick="adicionarCampoGabarito('faca-retangulo', 'Faca Retangular')" style="padding: 8px; background: #b534ad; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">✂️ + Faca Retangular</button>
+</div>
                 
                 <hr class="divisor">
 
@@ -185,8 +197,38 @@
                     <!-- Preenchido via JS -->
                 </div>
             </div>
+            <!-- MODAL GRANDE PARA GERENCIAMENTO DE GRUPOS -->
+
         </div>
     </div>
+        <!-- COLOQUE AQUI NO FINAL DO INDEX.HTML -->
+<div id="modalGerenciadorGrupo" class="zoom-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 2000; justify-content: center; align-items: center;">
+    <div style="background: white; width: 85vw; height: 85vh; border-radius: 8px; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px;">
+            <h2 id="tituloModalGrupo" style="margin: 0; color: #2c3e50;">Adicionar Imagens ao Grupo</h2>
+            <button onclick="fecharModalGerenciadorGrupo()" style="background: #e74c3c; color: white; border: none; padding: 8px 15px; font-weight: bold; border-radius: 4px; cursor: pointer;">❌ Fechar</button>
+        </div>
+        
 
+        <!-- Barra de Busca + Filtro do Grupo -->
+        <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+            <input type="text" id="buscaNomeModalGrupo" placeholder="🔍 Buscar imagem pelo nome no Drive..." oninput="filtrarImagensNoModalGrupo()" style="flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; box-sizing: border-box;">
+            
+            <!-- 🔥 NOVO FILTRO DE PERSISTÊNCIA VISUAL -->
+            <label style="display: flex; align-items: center; gap: 5px; background: #f8f9fa; padding: 10px 15px; border: 1px solid #ccc; border-radius: 6px; font-weight: bold; font-size: 13px; cursor: pointer; white-space: nowrap; user-select: none;">
+                <input type="checkbox" id="chkMostrarApenasGrupo" onchange="renderizarImagensNoModal()" style="width: 16px; height: 16px; cursor: pointer;">
+                📌 Mostrar apenas deste grupo
+            </label>
+        </div>
+
+        <div id="gridImagensModalGrupo" style="flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e2e8f0;">
+            <!-- Preenchido via JS -->
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
 </body>
 </html>
