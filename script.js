@@ -33,7 +33,7 @@ function salvarGruposNoStorage() {
     localStorage.setItem('mila_grupos_artes', JSON.stringify(gruposDeArtes));
 }
 
-// Atualize sua função de criar grupo para salvar no storage
+// Força a função a ficar disponível globalmente no escopo do navegador
 window.criarNovoGrupo = function() {
     const nomeGrupo = prompt("Digite o nome para o novo grupo de imagens:", "Novo Grupo");
     if (!nomeGrupo || nomeGrupo.trim() === "") return;
@@ -46,7 +46,7 @@ window.criarNovoGrupo = function() {
     });
 
     salvarGruposNoStorage(); // Grava no navegador
-    renderizarCatalogoComGrupos();
+    renderizarCatalogoComGrupos(); // Atualiza a barra lateral imediatamente
 };
 
 // Função global para renomear um grupo existente
