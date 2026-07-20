@@ -23,6 +23,81 @@ let arrastando = false;
 let offsetStartX = 0;
 let offsetStartY = 0;
 let imagemAtivaId = null;
+// Carrega os grupos salvos no navegador ou inicia com o padrão
+let gruposDeArtes = JSON.parse(localStorage.getItem('mila_grupos_artes')) || [
+    { id: 'grupo-geral', nome: 'Todas as Artes (Geral)', artes: [] }
+];
+
+// Função auxiliar para salvar o estado atual dos grupos no navegador
+function salvarGruposNoStorage() {
+    localStorage.setItem('mila_grupos_artes', JSON.stringify(gruposDeArtes));
+}
+
+// Atualize sua função de criar grupo para salvar no storage
+window.criarNovoGrupo = function() {
+    const nomeGrupo = prompt("Digite o nome para o novo grupo de imagens:", "Novo Grupo");
+    if (!nomeGrupo || nomeGrupo.trim() === "") return;
+
+    const novoId = 'grupo-' + Date.now();
+    gruposDeArtes.push({
+        id: novoId,
+        nome: nomeGrupo.trim(),
+        artes: []
+    });
+
+    salvarGruposNoStorage(); // Grava no navegador
+    renderizarCatalogoComGrupos();
+};
+
+// Função global para renomear um grupo existente
+window.renomearGrupo = function(grupoId) {
+    if (grupoId === 'grupo-geral') {
+        alert("O grupo geral não pode ser renomeado.");
+        return;
+    }
+    const grupo = gruposDeArtes.find(g => g.id === grupoId);
+    if (!grupo) return;
+
+    const novoNome = prompt(`Renomear o grupo "${grupo.nome}" para:`, grupo.nome);
+    if (!novoNome || novoNome.trim() === "") return;
+
+    grupo.nome = novoNome.trim();
+    salvarGruposNoStorage(); 
+    renderizarCatalogoComGrupos()
+};
+
+// Função global para excluir um grupo existente
+window.excluirGrupo = function(grupoId) {
+    if (grupoId === 'grupo-geral') {
+        alert("O grupo geral é padrão do sistema e não pode ser excluído.");
+        return;
+    }
+
+    const grupo = gruposDeArtes.find(g => g.id === grupoId);
+    if (!grupo) return;
+
+    // Pede uma confirmação para não apagar sem querer
+    const confirmar = confirm(`Tem certeza que deseja excluir o grupo "${grupo.nome}"?\nAs imagens voltarão a ficar visíveis no grupo Geral.`);
+    if (!confirmar) return;
+
+    // Se o grupo tinha artes, devolve elas para o grupo geral para não sumirem do sistema
+    if (grupo.artes && grupo.artes.length > 0) {
+        grupo.artes.forEach(arte => {
+            // Só joga de volta se ela já não estiver lá por algum motivo
+            const jaEstaNoGeral = gruposDeArtes[0].artes.some(a => a.id === arte.id);
+            if (!jaEstaNoGeral) {
+                gruposDeArtes[0].artes.push(arte);
+            }
+        });
+    }
+
+    // Filtra o array removendo o grupo deletado
+    gruposDeArtes = gruposDeArtes.filter(g => g.id !== grupoId);
+
+    // Grava a nova lista no navegador e atualiza a barra lateral
+    salvarGruposNoStorage();
+    renderizarCatalogoComGrupos();
+};
 
 // ==========================================
 // BANCO DE DADOS (GOOGLE SHEETS)
@@ -174,7 +249,9 @@ async function listarArtesDoGoogleDrive() {
             // Aguarda todas as proporções de imagem serem carregadas
             await Promise.all(carregamentos);
 
+            // ALTERADO: Agora renderiza primeiro a estrutura de grupos, depois calcula o sistema
             console.log("Catálogo do Drive carregado com proporções reais:", bancoDeArtes);
+            renderizarCatalogoComGrupos(); 
             renderizarSistema();
         } else {
             console.log("Nenhuma imagem encontrada na raiz do Google Drive.");
@@ -308,10 +385,10 @@ function renderizarSistema() {
     const elPedido = inputPedido || document.getElementById('inputPedido');
     const numeroPedido = elPedido ? elPedido.value.trim() : '';
     
-    const elGrid = imageGrid || document.getElementById('imageGrid') || document.querySelector('.image-grid');
+   // const elGrid = imageGrid || document.getElementById('imageGrid') || document.querySelector('.image-grid');
     const elMain = mainContent || document.getElementById('mainContent') || document.querySelector('.main-content');
     
-    if (elGrid) elGrid.innerHTML = '';
+    //if (elGrid) elGrid.innerHTML = '';
     if (elMain) elMain.innerHTML = '';
 
     // Divide os alunos por ponto e vírgula de forma ultra-segura
@@ -327,58 +404,7 @@ function renderizarSistema() {
             .filter(item => item !== "");
     }
     
-    // 1. Renderiza o catálogo lateral com busca
-    const filtradas = bancoDeArtes.filter(img => {
-        const nomeArte = (img && img.nome) ? img.nome.toLowerCase() : '';
-        return nomeArte.includes(filtro);
-    });
-
-    if (filtradas.length === 0) {
-        if (elGrid) elGrid.innerHTML = `<p style="grid-column:span 3;text-align:center;color:#880;">Nenhuma arte encontrada.</p>`;
-    } else {
-        filtradas.forEach((img) => {
-            if (elGrid) {
-                const containerThumb = document.createElement('div');
-                const estaAtivaParaConfigurar = (img.id === window.imagemSelecionadaId);
-                containerThumb.className = `thumb-container ${estaAtivaParaConfigurar ? 'selected-thumb' : ''}`;
-                
-                const imgEl = document.createElement('img');
-                imgEl.src = img.url;
-                imgEl.className = 'thumb';
-                
-                // Clique simples: apenas seleciona para produção
-                imgEl.onclick = () => {
-                    window.imagemSelecionadaId = img.id;
-                    
-                    const temGabarito = img.layout && img.layout.length > 0;
-                    if (!temGabarito) {
-                        console.log(`Arte "${img.nome}" não possui gabarito. Abrindo editor...`);
-                        setTimeout(() => {
-                            abrirModalEdicao(img.id);
-                        }, 300);
-                    } else {
-                        console.log(`Arte "${img.nome}" selecionada. Possui gabarito ativo.`);
-                        renderizarSistema(); // Atualiza a seleção visual
-                    }
-                };
-                
-                // DUPLO CLIQUE: Abre o modal de edição à força para reajustar parâmetros salvos!
-                imgEl.ondblclick = () => {
-                    console.log(`Forçando reedição de gabarito para a arte: ${img.nome}`);
-                    abrirModalEdicao(img.id);
-                };
-                
-                containerThumb.appendChild(imgEl);
-                
-                const btnDel = document.createElement('button');
-                btnDel.className = 'btn-delete';
-                btnDel.innerHTML = '&times;';
-                btnDel.onclick = (e) => { e.stopPropagation(); excluirImagem(img.id); };
-                containerThumb.appendChild(btnDel);
-                elGrid.appendChild(containerThumb);
-            }
-        });
-    }
+   
 
     if (demandasDeTrabalho.length === 0) {
         if (elMain) {
@@ -685,7 +711,7 @@ function abrirModalEdicao(idImagem) {
 
     canvas.style.width = '450px';
     canvas.style.height = '450px';
-    canvas.innerHTML = `<img id="imgFundoModal" src="${arte.url}" style="width:100%; height:100%; object-fit:cover; position:absolute; top:0; left:0; z-index:1;">`;
+    canvas.innerHTML = `<img id="imgFundoModal" src="${arte.url}" style="width:100%; height:100%; object-fit:contain; position:absolute; top:0; left:0; z-index:1;">`;
 
     if (!arte.layout) {
         arte.layout = [];
@@ -795,7 +821,7 @@ function renderizarItemNoModalCanvas(param, arte) {
     const el = document.createElement('div');
     el.className = 'draggable-text';
     el.id = `drag-${param.id}`;
-    el.innerText = param.label;
+    el.innerText = param.tipo === 'faca' ? '' : param.label; // Facas não levam texto dentro
     
     if (param.tipo === 'txt') {
         el.style.color = param.cor;
@@ -804,29 +830,90 @@ function renderizarItemNoModalCanvas(param, arte) {
         el.style.backgroundColor = 'rgba(0,0,0,0.3)'; 
         el.style.padding = '2px 6px';
         el.style.borderRadius = '4px';
-    } else if (param.tipo === 'qr') {
-        el.style.backgroundColor = '#9b59b6';
-        el.style.color = '#fff';
-        el.style.padding = '10px';
-        el.style.fontWeight = 'bold';
-        el.style.border = '2px dashed #fff';
-        el.style.fontSize = '11px';
-    } else if (param.tipo === 'bar') {
-        el.style.backgroundColor = '#2c3e50';
-        el.style.color = '#fff';
-        el.style.padding = '6px 20px';
-        el.style.fontWeight = 'bold';
-        el.style.border = '2px dashed #fff';
-        el.style.fontSize = '10px';
+        el.style.position = 'absolute';
+        el.style.left = `${(param.x / 100) * 450}px`;
+        el.style.top = `${(param.y / 100) * 450}px`;
+    } 
+    
+    // ✂️ LÓGICA DE ESTILIZAÇÃO DA FACA NO EDITOR
+    else if (param.tipo === 'faca') {
+        el.style.position = 'absolute';
+        el.style.border = '2px dashed #FF00FF'; // Rosa Spot
+        el.style.backgroundColor = 'rgba(255, 0, 255, 0.1)';
+        
+        // Inicializa tamanhos padrão se não existirem
+        param.w = param.w || 60;
+        param.h = param.h || 60;
+        
+        el.style.width = `${(param.w / 100) * 450}px`;
+        el.style.height = `${(param.h / 100) * 450}px`;
+        el.style.left = `${(param.x / 100) * 450}px`;
+        el.style.top = `${(param.y / 100) * 450}px`;
+
+        if (param.id.includes('circulo')) {
+            el.style.borderRadius = '50%';
+        }
+
+        // Cria o puxador/âncora de redimensionamento no canto inferior direito
+        const resizer = document.createElement('div');
+        resizer.style.width = '10px';
+        resizer.style.height = '10px';
+        resizer.style.background = '#FF00FF';
+        resizer.style.position = 'absolute';
+        resizer.style.right = '-5px';
+        resizer.style.bottom = '-5px';
+        resizer.style.cursor = 'se-resize';
+        resizer.style.zIndex = '100';
+        resizer.style.borderRadius = '50%';
+
+        // Evento de clique no puxador para redimensionar livremente
+        resizer.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            const startWidth = el.offsetWidth;
+            const startHeight = el.offsetHeight;
+            const startX = e.clientX;
+            const startY = e.clientY;
+            
+            const doResize = (moveEvent) => {
+                let newWidth = startWidth + (moveEvent.clientX - startX);
+                let newHeight = startHeight + (moveEvent.clientY - startY);
+                
+                // Limites mínimos para não sumir com o componente
+                newWidth = Math.max(20, newWidth);
+                newHeight = Math.max(20, newHeight);
+
+                // Se for faca quadrada, força a largura ser igual à altura
+                if (param.id.includes('quadrado') || param.id.includes('circulo')) {
+                    newHeight = newWidth; 
+                }
+
+                el.style.width = `${newWidth}px`;
+                el.style.height = `${newHeight}px`;
+                
+                // Converte de volta para porcentagem (%) para salvar no gabarito
+                param.w = (newWidth / 450) * 100;
+                param.h = (newHeight / 450) * 100;
+            };
+            
+            const stopResize = () => {
+                window.removeEventListener('mousemove', doResize);
+                window.removeEventListener('mouseup', stopResize);
+            };
+            
+            window.addEventListener('mousemove', doResize);
+            window.addEventListener('mouseup', stopResize);
+        });
+        
+        el.appendChild(resizer);
     }
     
-    el.style.position = 'absolute';
-    el.style.left = `${(param.x / 100) * 450}px`;
-    el.style.top = `${(param.y / 100) * 450}px`;
     el.style.transform = `rotate(${param.rotacao || 0}deg)`;
     el.style.cursor = 'move';
     el.style.zIndex = '10';
 
+    // Evento de Mover (Arrastar posição)
     el.addEventListener('mousedown', (e) => {
         e.stopPropagation();
         selecionarItem(param, el); 
@@ -846,7 +933,6 @@ async function fecharModal() {
     
     if (arte) {
         console.log("Salvando novo gabarito no banco de dados Sheets...");
-        
         const btnSalvar = document.querySelector('#editModal button[onclick*="fecharModal"]');
         if (btnSalvar) btnSalvar.innerText = "💾 Gravando...";
 
@@ -860,6 +946,8 @@ async function fecharModal() {
     itemSelecionado = null;
     imagemAtivaId = null;
     
+    // 🎯 AJUSTE AQUI: Garante que as pastas e a folha atualizem juntas ao fechar o modal
+    renderizarCatalogoComGrupos(); 
     renderizarSistema();
 }
 
@@ -872,82 +960,85 @@ function criarAdesivoElementoLote(img, larguraMm, alturaMm, dadosAlunoString, nu
 
     const sticker = document.createElement('div');
     sticker.className = 'sticker-container';
-    
-    sticker.style.setProperty('width', `${larguraMm}mm`, 'important');
-    sticker.style.setProperty('height', `${alturaMm}mm`, 'important');
     sticker.style.position = 'relative';
+    sticker.style.width = `${larguraMm}mm`;
+    sticker.style.height = `${alturaMm}mm`;
     sticker.style.overflow = 'hidden';
 
-    // ====== IDENTIFICAÇÃO DO FORMATO ======
-    const nomeArteMinusculo = (img.nome || "").toLowerCase();
-    
-    // Só aplica o formato redondo se:
-    // 1. A proporção for 1:1 (largura igual à altura)
-    // 2. E o nome do arquivo NÃO contiver termos como "tri", "triangulo", "quadrado" ou "ret"
-    const ehRedondo = (larguraMm === alturaMm) && 
-                      !nomeArteMinusculo.includes('tri') && 
-                      !nomeArteMinusculo.includes('quadrado');
-
-    if (ehRedondo) {
-        sticker.style.borderRadius = '50%'; // Garante visual redondo na tela
-    } else {
-        sticker.style.borderRadius = '0px'; // Mantém o formato original da imagem
-    }
-
+    // Imagem de fundo da arte base
     const bg = document.createElement('img');
     bg.className = 'art-background';
     bg.src = img.url; 
+    bg.style.position = 'absolute';
+    bg.style.top = '0';
+    bg.style.left = '0';
     bg.style.width = '100%';
     bg.style.height = '100%';
     sticker.appendChild(bg);
 
-    // ==========================================
-    // ✂️ INJEÇÃO DA FACA DE CORTE AUTOMÁTICA (CutContour)
-    // ==========================================
-    const linhaDeCorte = document.createElement('div');
-    linhaDeCorte.style.position = 'absolute';
-    linhaDeCorte.style.top = '0';
-    linhaDeCorte.style.left = '0';
-    linhaDeCorte.style.right = '0';
-    linhaDeCorte.style.bottom = '0';
-    linhaDeCorte.style.pointerEvents = 'none';
-    linhaDeCorte.style.zIndex = '99';
+    // Criamos o container SVG para injetar as linhas de corte vetoriais puras
+    const svgCorte = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svgCorte.setAttribute('style', 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 99;');
+    svgCorte.setAttribute('viewBox', `0 0 ${larguraMm} ${alturaMm}`);
 
-    // Borda rosa de 0.25mm (Spot Color de corte)
-    linhaDeCorte.style.border = '0.25mm solid #FF00FF';
-    
-    if (ehRedondo) {
-        linhaDeCorte.style.borderRadius = '50%'; // Contorno circular perfeito
-    } else {
-        linhaDeCorte.style.borderRadius = '0px'; // Contorno reto (retângulos/quadrados/triângulos no limite do bloco)
-    }
+    let temFacaManual = false;
 
-    sticker.appendChild(linhaDeCorte);
-
-    // ==========================================
-    // RENDERIZAÇÃO DOS TEXTOS DO ALUNO (LOTE)
-    // ==========================================
+    // Tratamento de dados de texto do lote
     let partes = textoSeguro.split(/[-–/]/).map(p => p.trim());
-    const dadosTratados = {
-        'nome': partes[0] || '',
-        'serie': partes[1] || '',
-        'escola': partes[2] || ''
-    };
+    const dadosTratados = { 'nome': partes[0] || '', 'serie': partes[1] || '', 'escola': partes[2] || '' };
 
     if (img.layout && Array.isArray(img.layout)) {
         img.layout.forEach(p => {
-            const camada = document.createElement('div');
-            camada.style.position = 'absolute';
-            camada.style.left = `${p.x}%`;
-            camada.style.top = `${p.y}%`;
-            camada.style.transform = `rotate(${p.rotacao || 0}deg)`;
-            camada.style.zIndex = '5';
-            camada.style.whiteSpace = 'nowrap';
+            // ✂️ SE FOR FACA MANUAL CONFIGURADA
+            if (p.tipo === 'faca') {
+                temFacaManual = true;
+                
+                // Converte as posições e tamanhos relativos (%) em milímetros baseados na proporção da imagem
+                const xMm = (p.x / 100) * larguraMm;
+                const yMm = (p.y / 100) * alturaMm;
+                const wMm = (p.w / 100) * larguraMm;
+                const hMm = (p.h / 100) * alturaMm;
+
+                if (p.id.includes('circulo')) {
+                    // Desenha um círculo vetorial perfeito no SVG
+                    const raio = wMm / 2;
+                    const centroX = xMm + raio;
+                    const centroY = yMm + raio;
+
+                    const circ = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    circ.setAttribute("cx", centroX);
+                    circ.setAttribute("cy", centroY);
+                    circ.setAttribute("r", raio);
+                    circ.setAttribute("stroke", "#FF00FF"); // Rosa Spot de Faca
+                    circ.setAttribute("stroke-width", "0.25mm");
+                    circ.setAttribute("fill", "none");
+                    svgCorte.appendChild(circ);
+                } else {
+                    // Desenha um retângulo vetorial perfeito no SVG
+                    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rect.setAttribute("x", xMm);
+                    rect.setAttribute("y", yMm);
+                    rect.setAttribute("width", wMm);
+                    rect.setAttribute("height", hMm);
+                    rect.setAttribute("stroke", "#FF00FF");
+                    rect.setAttribute("stroke-width", "0.25mm");
+                    rect.setAttribute("fill", "none");
+                    svgCorte.appendChild(rect);
+                }
+            }
             
-            if (p.tipo === 'txt') {
+            // 📝 SE FOR TEXTO DINÂMICO
+            else if (p.tipo === 'txt') {
+                const camada = document.createElement('div');
+                camada.style.position = 'absolute';
+                camada.style.left = `${p.x}%`;
+                camada.style.top = `${p.y}%`;
+                camada.style.transform = `rotate(${p.rotacao || 0}deg)`;
+                camada.style.zIndex = '5';
+                camada.style.whiteSpace = 'nowrap';
+                
                 const idNormalizado = (p.id || "").toLowerCase();
                 const textoNormalizado = (p.label || p.texto || "").toLowerCase();
-                
                 let textoExibir = p.texto || p.label;
 
                 if (idNormalizado.includes('nome') || textoNormalizado.includes('nome')) {
@@ -969,11 +1060,46 @@ function criarAdesivoElementoLote(img, larguraMm, alturaMm, dadosAlunoString, nu
 
                 camada.style.fontSize = `${tamanhoMmEfetivo}mm`; 
                 camada.style.lineHeight = '1';
-                
                 sticker.appendChild(camada);
             }
         });
     }
+
+    // FALLBACK INTELIGENTE: Se o usuário não desenhou nenhuma faca manual no editor,
+    // o sistema cria a faca automática nas bordas da imagem por padrão.
+    if (!temFacaManual) {
+        const nomeArteMinusculo = (img.nome || "").toLowerCase();
+        
+        // Mantém a sua regra inteligente de formato redondo automático
+        const ehRedondo = (larguraMm === alturaMm) && 
+                          !nomeArteMinusculo.includes('tri') && 
+                          !nomeArteMinusculo.includes('quadrado');
+
+        if (ehRedondo) {
+            // Desenha o círculo vetorial cobrindo o adesivo de ponta a ponta
+            const circ = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circ.setAttribute("cx", (larguraMm / 2).toString());
+            circ.setAttribute("cy", (alturaMm / 2).toString());
+            circ.setAttribute("r", (larguraMm / 2).toString());
+            circ.setAttribute("stroke", "#FF00FF");
+            circ.setAttribute("stroke-width", "0.25mm");
+            circ.setAttribute("fill", "none");
+            svgCorte.appendChild(circ);
+        } else {
+            // Desenha o retângulo vetorial cobrindo as bordas físicas do adesivo
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            rect.setAttribute("x", "0");
+            rect.setAttribute("y", "0");
+            rect.setAttribute("width", larguraMm.toString());
+            rect.setAttribute("height", alturaMm.toString());
+            rect.setAttribute("stroke", "#FF00FF");
+            rect.setAttribute("stroke-width", "0.25mm");
+            rect.setAttribute("fill", "none");
+            svgCorte.appendChild(rect);
+        }
+    }
+
+    sticker.appendChild(svgCorte);
     return sticker;
 }
 
@@ -1015,15 +1141,17 @@ window.adicionarDemandaLote = function() {
         });
     }
 
-    console.log("Fila de produção atualizada:", demandasDeTrabalho);
+    console.log("Fila de produção updated:", demandasDeTrabalho);
     atualizarFilaVisual();
     renderizarSistema();
+    renderizarCatalogoComGrupos(); 
 };
 
 window.removerDemanda = function(index) {
     demandasDeTrabalho.splice(index, 1);
     atualizarFilaVisual();
     renderizarSistema();
+    renderizarCatalogoComGrupos();
 };
 
 function atualizarFilaVisual() {
@@ -1054,9 +1182,6 @@ function atualizarFilaVisual() {
 
 document.addEventListener('DOMContentLoaded', () => {
     inputCodBarrasManual = document.getElementById('inputCodBarrasManual');
-
-    fileLoader = document.getElementById('fileLoader');
-    imageGrid = document.getElementById('imageGrid');
     mainContent = document.getElementById('mainContent');
     selectTamanhoAdesivo = document.getElementById('selectTamanhoAdesivo');
     selectTamanho = document.getElementById('selectTamanho');
@@ -1071,21 +1196,23 @@ document.addEventListener('DOMContentLoaded', () => {
     textFontSelect = document.getElementById('editTextoFonte');
     textRotationInput = document.getElementById('editTextoRotacao');
 
-    // ADICIONADO VERIFICAÇÕES DE SEGURANÇA (Evita o erro de "null" no GitHub Pages)
     if (inputZoom) {
         inputZoom.addEventListener('input', atualizarZoomVisual);
     }
     
-    // Filtra apenas os elementos que realmente existem na tela antes de monitorar o 'change'
-    const elementosParaMonitorar = [selectTamanho, selectTamanhoAdesivo, inputPedido, inputCopias].filter(el => el !== null);
-    elementosParaMonitorar.forEach(el => {
-        el.addEventListener('change', renderizarSistema);
-    });
+    // 🎯 O PULO DO GATO: Monitora selects mudando apenas a folha de produção, sem tocar nas pastas da barra lateral!
+    if (selectTamanho) {
+        selectTamanho.addEventListener('change', renderizarSistema);
+    }
+    if (selectTamanhoAdesivo) {
+        selectTamanhoAdesivo.addEventListener('change', renderizarSistema);
+    }
     
     if (inputPedido) inputPedido.addEventListener('input', renderizarSistema);
     if (inputCopias) inputCopias.addEventListener('input', renderizarSistema);
     if (inputCodBarrasManual) inputCodBarrasManual.addEventListener('input', renderizarSistema);
 
+    // Monitoramento do Modal de Gabarito
     if (textValueInput) {
         textValueInput.addEventListener('input', (e) => {
             if (!itemSelecionado) return;
@@ -1093,7 +1220,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if(itemSelecionado.elHtml) itemSelecionado.elHtml.innerText = e.target.value;
         });
     }
-
     if (textColorInput) {
         textColorInput.addEventListener('input', (e) => {
             if (!itemSelecionado) return;
@@ -1101,16 +1227,25 @@ document.addEventListener('DOMContentLoaded', () => {
             if(itemSelecionado.elHtml) itemSelecionado.elHtml.style.color = e.target.value;
         });
     }
-
     if (textSizeInput) {
-        textSizeInput.addEventListener('input', (e) => {
-            if (!itemSelecionado) return;
-            const tamanhoEfetivo = parseInt(e.target.value) || 12;
-            itemSelecionado.dados.tamanho = tamanhoEfetivo;
-            itemSelecionado.elHtml.style.fontSize = `${tamanhoEfetivo}px`;
-        });
-    }
-
+    textSizeInput.addEventListener('input', (e) => {
+        if (!itemSelecionado) return;
+        const valor = parseInt(e.target.value) || 10;
+        
+        if (itemSelecionado.dados.tipo === 'faca') {
+            // Se for faca, o input controla o tamanho percentual dela na imagem
+            itemSelecionado.dados.w = valor;
+            itemSelecionado.dados.h = valor; // Mantém proporcional para círculos
+            
+            itemSelecionado.elHtml.style.width = `${(valor / 100) * 450}px`;
+            itemSelecionado.elHtml.style.height = `${(valor / 100) * 450}px`;
+        } else {
+            // Código antigo para textos comuns
+            itemSelecionado.dados.tamanho = valor;
+            itemSelecionado.elHtml.style.fontSize = `${valor}px`;
+        }
+    });
+}
     if (textFontSelect) {
         textFontSelect.addEventListener('change', (e) => {
             if (!itemSelecionado) return;
@@ -1118,7 +1253,6 @@ document.addEventListener('DOMContentLoaded', () => {
             itemSelecionado.elHtml.style.fontFamily = e.target.value;
         });
     }
-
     if (textRotationInput) {
         textRotationInput.addEventListener('input', (e) => {
             if (!itemSelecionado) return;
@@ -1132,12 +1266,16 @@ document.addEventListener('DOMContentLoaded', () => {
         txtListaAlunos.addEventListener('input', renderizarSistema);
     }
 
+    // 🔍 O campo de busca da barra lateral agora filtra os Grupos!
     const elBusca = document.getElementById('searchInput');
     if (elBusca) {
-        elBusca.addEventListener('input', renderizarSistema);
+        elBusca.addEventListener('input', () => {
+            const filtro = elBusca.value.toLowerCase();
+            // Filtra as artes em memória temporariamente para os grupos exibirem apenas o match
+            renderizarCatalogoComGrupos(filtro);
+        });
     }
 
-    // Só inicializa o Google se a biblioteca carregar
     if (typeof google !== 'undefined') {
         window.inicializarGoogleAuth();
     }
@@ -1194,6 +1332,7 @@ async function verificarSessaoExistente() {
             }
 
             await listarArtesDoGoogleDrive();
+            renderizarCatalogoComGrupos(); // 👈 ADICIONADO AQUI TAMBÉM POR SEGURANÇA
         } else {
             console.log("Sessão anterior expirada. Necessário novo login.");
             localStorage.removeItem('mila_drive_sessao'); 
@@ -1257,3 +1396,300 @@ window.conectarGoogleDrive = function() {
         alert("O sistema do Google não pôde ser carregado. Verifique sua conexão com a internet.");
     }
 };
+
+function renderizarCatalogoComGrupos(termoFiltro = "") {
+    const grid = document.getElementById('imageGrid');
+    if (!grid) return;
+    
+    grid.innerHTML = '';
+
+    if (gruposDeArtes[0].artes.length === 0 && bancoDeArtes.length > 0) {
+        gruposDeArtes[0].artes = [...bancoDeArtes];
+        salvarGruposNoStorage();
+    }
+
+    gruposDeArtes.forEach(grupo => {
+        // Filtra as artes deste grupo com base na busca caso o usuário digite algo
+        const artesFiltradas = grupo.artes.filter(img => 
+            (img.nome || "").toLowerCase().includes(termoFiltro)
+        );
+
+        // Se o usuário buscou algo e este grupo não tem nenhuma imagem com esse nome, oculta o box
+        if (termoFiltro !== "" && artesFiltradas.length === 0) return;
+
+        const grupoBox = document.createElement('div');
+        grupoBox.style.background = '#fcfcfc';
+        grupoBox.style.border = '1px solid #dcdcdc';
+        grupoBox.style.borderRadius = '6px';
+        grupoBox.style.padding = '10px';
+        grupoBox.style.marginBottom = '10px';
+
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.marginBottom = '8px';
+        header.style.borderBottom = '1px solid #e6e6e6';
+        header.style.paddingBottom = '4px';
+
+        const titulo = document.createElement('span');
+        titulo.innerText = `📂 ${grupo.nome} (${artesFiltradas.length})`;
+        titulo.style.fontWeight = 'bold';
+        titulo.style.fontSize = '12px';
+        titulo.style.cursor = 'pointer';
+        titulo.ondblclick = () => renomearGrupo(grupo.id);
+        header.appendChild(titulo);
+
+        // Container para agrupar os botões de ação na direita do título
+        const acoesBox = document.createElement('div');
+        acoesBox.style.display = 'flex';
+        acoesBox.style.gap = '4px';
+
+        // 1. BOTÃO PARA ABRIR O MODAL GRANDE DE BUSCA E GERENCIAMENTO
+        const btnGerenciar = document.createElement('button');
+        btnGerenciar.innerText = '⚙️ Config';
+        btnGerenciar.style.background = '#34495e';
+        btnGerenciar.style.color = 'white';
+        btnGerenciar.style.border = 'none';
+        btnGerenciar.style.padding = '3px 7px';
+        btnGerenciar.style.borderRadius = '3px';
+        btnGerenciar.style.fontSize = '10px';
+        btnGerenciar.style.cursor = 'pointer';
+        btnGerenciar.onclick = () => abrirGerenciadorGrupo(grupo.id);
+        acoesBox.appendChild(btnGerenciar);
+
+        // 🔥 2. NOVO BOTÃO EXPLÍCITO DE RENOMEAR (Não aparece no grupo geral)
+        if (grupo.id !== 'grupo-geral') {
+            const btnEditarNome = document.createElement('button');
+            btnEditarNome.innerText = '✏️';
+            btnEditarNome.style.background = '#f1c40f'; // Amarelo/Dourado profissional
+            btnEditarNome.style.color = 'black';
+            btnEditarNome.style.border = 'none';
+            btnEditarNome.style.padding = '3px 6px';
+            btnEditarNome.style.borderRadius = '3px';
+            btnEditarNome.style.fontSize = '9px';
+            btnEditarNome.style.cursor = 'pointer';
+            btnEditarNome.title = "Renomear este grupo";
+            btnEditarNome.onclick = () => window.renomearGrupo(grupo.id);
+            acoesBox.appendChild(btnEditarNome);
+        }
+
+        // 3. BOTÃO DE EXCLUIR GRUPO (Não aparece no grupo geral)
+        if (grupo.id !== 'grupo-geral') {
+            const btnExcluir = document.createElement('button');
+            btnExcluir.innerText = '❌';
+            btnExcluir.style.background = '#e74c3c';
+            btnExcluir.style.color = 'white';
+            btnExcluir.style.border = 'none';
+            btnExcluir.style.padding = '3px 6px';
+            btnExcluir.style.borderRadius = '3px';
+            btnExcluir.style.fontSize = '9px';
+            btnExcluir.style.cursor = 'pointer';
+            btnExcluir.title = "Excluir esta pasta";
+            btnExcluir.onclick = () => window.excluirGrupo(grupo.id);
+            acoesBox.appendChild(btnExcluir);
+        }
+
+        header.appendChild(acoesBox);
+        grupoBox.appendChild(header);
+
+        const containerMiniaturas = document.createElement('div');
+        containerMiniaturas.style.display = 'flex';
+        containerMiniaturas.style.gap = '8px';
+        containerMiniaturas.style.overflowX = 'auto';
+        containerMiniaturas.style.padding = '4px 0';
+
+        if (artesFiltradas.length === 0) {
+            const em = document.createElement('em');
+            em.innerText = 'Nenhuma arte...';
+            em.style.color = '#bbb';
+            em.style.fontSize = '11px';
+            containerMiniaturas.appendChild(em);
+        } else {
+            artesFiltradas.forEach(img => {
+                const imgWrapper = document.createElement('div');
+                imgWrapper.style.position = 'relative';
+                imgWrapper.style.minWidth = '75px';
+                imgWrapper.style.width = '75px';
+                imgWrapper.style.height = '75px';
+                imgWrapper.style.border = img.id === window.imagemSelecionadaId ? '2px solid #0056b3' : '2px solid #ddd';
+                imgWrapper.style.borderRadius = '4px';
+                imgWrapper.style.overflow = 'hidden';
+                imgWrapper.style.cursor = 'pointer';
+
+                const thumb = document.createElement('img');
+                // 🛑 FORÇA A URL DO CORPO DO DRIVE CONVERTIDA PARA NÃO QUEBRAR
+                if (img.id) {
+                    thumb.src = `https://lh3.googleusercontent.com/d/${img.id}=s220`;
+                } else {
+                    thumb.src = img.url;
+                }
+                thumb.style.width = '100%';
+                thumb.style.height = '100%';
+                thumb.style.objectFit = 'contain';
+                
+                // Clique simples: Seleciona a arte base ou abre se não tiver gabarito
+                thumb.onclick = () => {
+                    window.imagemSelecionadaId = img.id;
+                    
+                    const arteGlobal = bancoDeArtes.find(a => a.id === img.id);
+                    const temGabarito = arteGlobal && arteGlobal.layout && arteGlobal.layout.length > 0;
+                    
+                    if (!temGabarito) {
+                        console.log(`Arte "${img.nome}" sem gabarito. Abrindo editor...`);
+                        setTimeout(() => { abrirModalEdicao(img.id); }, 300);
+                    } else {
+                        console.log(`Arte "${img.nome}" selecionada com sucesso!`);
+                        renderizarSistema();
+                        renderizarCatalogoComGrupos(termoFiltro);
+                    }
+                };
+
+                // 🔥 ADICIONADO DE VOLTA: DUPLO CLIQUE FORÇA A ABERTURA DO EDITOR
+                thumb.ondblclick = () => {
+                    console.log(`Forçando reedição de gabarito para a arte: ${img.nome}`);
+                    window.imagemSelecionadaId = img.id;
+                    abrirModalEdicao(img.id);
+                };
+
+                imgWrapper.appendChild(thumb);
+                containerMiniaturas.appendChild(imgWrapper);
+            });
+        }
+        grupoBox.appendChild(containerMiniaturas);
+        grid.appendChild(grupoBox);
+    });
+}
+
+let grupoAtivoId = null; 
+let termoBuscaModal = "";
+
+window.abrirGerenciadorGrupo = function(grupoId) {
+    const grupo = gruposDeArtes.find(g => g.id === grupoId);
+    if (!grupo) return;
+
+    grupoAtivoId = grupoId;
+    termoBuscaModal = "";
+    
+    const modal = document.getElementById('modalGerenciadorGrupo');
+    const inputBusca = document.getElementById('buscaNomeModalGrupo');
+    const tituloModal = document.getElementById('tituloModalGrupo');
+    const chkFiltro = document.getElementById('chkMostrarApenasGrupo');
+
+    if (inputBusca) inputBusca.value = "";
+    if (tituloModal) tituloModal.innerText = `Adicionar Imagens a: ${grupo.nome}`;
+    
+    // 🎯 CORREÇÃO: Força o checkbox a iniciar MARCADO por padrão!
+    if (chkFiltro) chkFiltro.checked = true; 
+    
+    if (modal) {
+        modal.style.setProperty('display', 'flex', 'important');
+        renderizarImagensNoModal();
+    }
+};
+
+window.fecharModalGerenciadorGrupo = function() {
+    const modal = document.getElementById('modalGerenciadorGrupo');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    grupoAtivoId = null;
+    renderizarCatalogoComGrupos(); // Recarrega o catálogo lateral atualizado
+};
+
+window.filtrarImagensNoModalGrupo = function() {
+    const inputBusca = document.getElementById('buscaNomeModalGrupo');
+    termoBuscaModal = inputBusca ? inputBusca.value.toLowerCase() : "";
+    renderizarImagensNoModal();
+};
+
+function renderizarImagensNoModal() {
+    const gridModal = document.getElementById('gridImagensModalGrupo');
+    if (!gridModal) return;
+    gridModal.innerHTML = '';
+
+    const grupoAtual = gruposDeArtes.find(g => g.id === grupoAtivoId);
+    if (!grupoAtual) return;
+
+    const chkFiltro = document.getElementById('chkMostrarApenasGrupo');
+    const apenasDoGrupo = chkFiltro ? chkFiltro.checked : false;
+
+    // 1. Aplica o filtro por nome vindo da barra de busca
+    let imagensFiltradas = bancoDeArtes.filter(img => 
+        (img.nome || "").toLowerCase().includes(termoBuscaModal)
+    );
+
+    // 2. 🔥 NOVO FILTRO: Se ativado, remove tudo o que não pertence ao grupo ativo
+    if (apenasDoGrupo) {
+        imagensFiltradas = imagensFiltradas.filter(img => 
+            grupoAtual.artes.some(a => a.id === img.id)
+        );
+    }
+
+    if (imagensFiltradas.length === 0) {
+        gridModal.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #7f8c8d; font-style: italic; margin-top: 30px;">Nenhuma imagem localizada neste filtro.</p>';
+        return;
+    }
+
+    imagensFiltradas.forEach(img => {
+        const jaEstaNoGrupo = grupoAtual.artes.some(a => a.id === img.id);
+
+        const card = document.createElement('div');
+        card.style.background = 'white';
+        card.style.border = jaEstaNoGrupo ? '3px solid #2ecc71' : '1px solid #cbd5e1';
+        card.style.borderRadius = '8px';
+        card.style.padding = '10px';
+        card.style.display = 'flex';
+        card.style.flexDirection = 'column';
+        card.style.alignItems = 'center';
+        card.style.position = 'relative';
+        card.style.boxShadow = '0 2px 5px rgba(0,0,0,0.05)';
+
+        const previewContainer = document.createElement('div');
+        previewContainer.style.width = '120px';
+        previewContainer.style.height = '120px';
+        previewContainer.style.marginBottom = '8px';
+
+        const imgEl = document.createElement('img');
+        imgEl.src = img.id ? `https://lh3.googleusercontent.com/d/${img.id}=s220` : img.url;
+        imgEl.style.width = '100%';
+        imgEl.style.height = '100%';
+        imgEl.style.objectFit = 'contain';
+        previewContainer.appendChild(imgEl);
+
+        const label = document.createElement('span');
+        label.innerText = img.nome || 'Sem Nome';
+        label.style.fontSize = '12px';
+        label.style.fontWeight = 'bold';
+        label.style.textAlign = 'center';
+        label.style.marginBottom = '8px';
+
+        const btnAcao = document.createElement('button');
+        btnAcao.innerText = jaEstaNoGrupo ? '✓ Incluído' : '➕ Adicionar';
+        btnAcao.style.width = '100%';
+        btnAcao.style.padding = '6px';
+        btnAcao.style.border = 'none';
+        btnAcao.style.borderRadius = '4px';
+        btnAcao.style.fontWeight = 'bold';
+        btnAcao.style.cursor = 'pointer';
+        btnAcao.style.background = jaEstaNoGrupo ? '#2ecc71' : '#3498db';
+        btnAcao.style.color = 'white';
+
+        btnAcao.onclick = () => {
+            if (jaEstaNoGrupo) {
+                grupoAtual.artes = grupoAtual.artes.filter(a => a.id !== img.id);
+            } else {
+                grupoAtual.artes.push(img);
+            }
+            salvarGruposNoStorage(); 
+            
+            // Se o usuário estiver no modo "apenas do grupo" e remover a imagem, ela deve sumir da tela na hora
+            renderizarImagensNoModal(); 
+        };
+
+        card.appendChild(previewContainer);
+        card.appendChild(label);
+        card.appendChild(btnAcao);
+        gridModal.appendChild(card);
+    });
+}
