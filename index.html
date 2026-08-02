@@ -1,234 +1,204 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-    <!--Autor: Felipe Dias Gomes
-        Contato: felipedias777@gmail.com-->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mila Autoprint | Sistema de Personalização</title>
     <link rel="stylesheet" href="style.css">
+    
+    <!-- Bibliotecas -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
-    <script src="script.js"></script>
-    <!-- Força o carregamento prioritário da biblioteca do Google -->
-    <script src="https://accounts.google.com/gsi/client"></script>
+    <script src="https://accounts.google.com/gsi/client" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
+    
+    <script src="script.js" defer></script>
 </head>
 <body>
 
-    <div class="sidebar">
-        <div class="logo-container">
-            <img src="ImagensMila/logo.jpg" alt="Mila Personalizados" class="app-logo">
-            <h1>Mila Autoprint</h1>
-            <p>Gerenciador de Impressão</p>
+    <!-- NAVBAR SUPERIOR ESTILO TUTU -->
+    <header class="tutu-navbar">
+        <div class="nav-brand">
+            <img src="ImagensMila/logo.jpg" alt="Mila" class="nav-logo">
+            <span>Mila Autoprint <small>Edition</small></span>
         </div>
-        
-        <hr class="divisor">
-
-        <h2>1. Carregar e Buscar Artes</h2>
-        <div class="search-box" style="display: flex; flex-direction: column; gap: 10px;">
-            <!-- Campo de Busca por Nome de Imagem -->
-            <div class="busca-container">
-                <input type="text" id="searchInput" placeholder="🔍 Buscar arte pelo nome..." autocomplete="off">
-            </div>
-            <label class="btn-upload" style="display: flex; flex-direction: column; gap: 5px;">
-                <button onclick="conectarGoogleDrive()" style="width: 100%; padding: 8px; background: #4285F4; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
-                    🔗 Conectar Google Drive
-                </button>
-            </label>
-        </div>
-
-        <!-- Painel de Gerenciamento de Demandas da Arte Selecionada -->
-        <div class="demandas-container" style="margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 8px; border: 1px solid #ddd;">
-            <h4 style="margin-top: 0;">📏 Configurar Tamanho & Cópias</h4>
-            
-            <div style="display: flex; gap: 5px; margin-bottom: 10px;">
-                <select id="selectTamanhoAdesivo" style="flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-                    <option value="40">4 cm (40mm)</option>
-                    <option value="50">5 cm (50mm)</option>
-                    <option value="60">6 cm (60mm)</option>
-                    <option value="90">9 cm (90mm)</option>
-                </select>
-                
-                <input type="number" id="inputCopias" value="10" min="1" style="width: 70px; padding: 8px; border-radius: 4px; border: 1px solid #ccc; text-align: center;">
-            </div>
-            
-            <button onclick="adicionarDemandaLote()" style="width: 100%; padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                ➕ Adicionar à Produção
-            </button>
-
-            <div id="listaFilaImpressao" style="margin-top: 15px; font-size: 12px; max-height: 150px; overflow-y: auto;">
-                <em style="color:#aaa;">Nenhum item na fila de produção.</em>
-            </div>
-        </div>
-
-        <!-- Controle de Agrupamento Dinâmico -->
-        <div style="margin-top: 15px; display: flex; gap: 5px;">
-            <button onclick="criarNovoGrupo()" style="flex: 1; padding: 8px; background-color: #f39c12; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;">
-                📁 + Criar Grupo de Imagens
+        <nav class="nav-tabs">
+            <button class="tab-btn active" onclick="mudarAba('edicao-simples', this)">🏠 Edição Simples</button>
+            <button class="tab-btn" onclick="mudarAba('gerar-massa', this)">⚡ Gerar em Massa</button>
+            <button class="tab-btn" onclick="mudarAba('catalogo-pastas', this)">📁 Pastas & Drive</button>
+        </nav>
+        <div class="nav-status">
+            <button onclick="conectarGoogleDrive()" id="btnDrive" class="btn-conectar-drive">
+                🔗 Conectar Google Drive
             </button>
         </div>
-        
-        <!-- 🔓 A GAVETA EXCLUSIVA E BLINDADA DAS PASTAS -->
-        <div id="imageGrid" style="margin-top: 15px; display: flex; flex-direction: column; gap: 15px;"></div>
+    </header>
 
-        <!-- APENAS UM CONTROLE DE ZOOM AQUI -->
-        <div class="input-group" style="margin-top: 15px;">
-            <label style="display: flex; justify-content: space-between;">
-                <span>🔍 Zoom da Pré-visualização</span>
-                <span id="zoomValor">100%</span>
-            </label>
-            <input type="range" id="inputZoom" min="50" max="200" value="100" step="5" style="cursor: pointer;">
-        </div>
+    <!-- CONTEÚDO PRINCIPAL EM ABAS -->
+    <main class="tutu-main-container">
 
-        
-
-        <hr class="divisor">
-
-        <h2>2. Dados da Produção (Lote)</h2>
-        <div class="secao-producao-lote" style="display: flex; flex-direction: column; gap: 10px;">
-            <!-- Textarea para colar a lista direto do chat do cliente -->
-            <textarea id="txtListaAlunos" rows="5" placeholder="Cole os nomes aqui...&#10;João Silva - 2º Ano - Escola ABC;&#10;Maria Souza - 1º Ano - Escola ABC;" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-family: monospace; font-size: 11px; box-sizing: border-box; resize: vertical;"></textarea>
-            
-            <div class="controle-pedido" style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="inputPedido" style="font-weight: bold; font-size: 13px;">Número do Pedido (QR Code):</label>
-                <input type="text" id="inputPedido" placeholder="Ex: 10254" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-            </div>
-
-            <div class="input-group" style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="inputCodBarrasManual" style="font-weight: bold; font-size: 13px;">Cód. Barras (Manual):</label>
-                <input type="text" id="inputCodBarrasManual" placeholder="Digite o código manual..." style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-            </div>
-        </div>
-
-        <hr class="divisor">
-
-        <h2>3. Configuração da Folha</h2>
-        <div class="input-group" style="margin-bottom: 15px;">
-            <label>Tamanho da Folha Física</label>
-            <select id="selectTamanho">
-    <option value="A4">A4 (Padrão)</option>
-    <option value="A3">A3 (Grande)</option>
-</select>
-        </div>
-        
-        <!-- Botão de impressão nativo e limpo para o motor de PDF -->
-        <button class="btn-print" onclick="executarImpressaoLote()" style="background-color: #007bff; color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px;">
-    🖨️ Gerar PDF / Imprimir Lote
-</button>
-    </div>
-
-    <div class="main-content" id="mainContent">
-        <p id="previewPlaceholder" style="color: #7f8c8d; font-style: italic;">
-            Selecione as artes e configure a fila de produção para visualizar as páginas.
-        </p>
-    </div>
-
-    <!-- MODAL DE ESTILIZAÇÃO EM TEMPO REAL -->
-    <div id="editModal" class="zoom-modal">
-        <div class="modal-container" style="width: 95vw; height: 90vh;">
-            <div class="modal-sidebar" style="width: 320px;">
-                <h3>Gerenciar Parâmetros</h3>
-                <p style="font-size: 0.75rem; color: #666; margin-bottom: 10px;">Configure os campos dinâmicos da sua arte base.</p>
-                
-                <!-- BOTÕES DE PARÂMETROS PREDEFINIDOS -->
-              <div class="template-presets" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
-    <button onclick="adicionarCampoGabarito('txt-nome', 'Nome do Aluno')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Nome do Aluno</button>
-    <button onclick="adicionarCampoGabarito('txt-serie', 'Série / Ano')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Série</button>
-    <button onclick="adicionarCampoGabarito('txt-escola', 'Escola')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">+ Escola</button>
-    
-    <hr class="divisor">
-    <button onclick="adicionarCampoGabarito('faca-circulo', 'Faca Circular')" style="padding: 8px; background: #b534ad; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">✂️ + Faca Redonda</button>
-    <button onclick="adicionarCampoGabarito('faca-quadrado', 'Faca Quadrada')" style="padding: 8px; background: #b534ad; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">✂️ + Faca Quadrada</button>
-    <button onclick="adicionarCampoGabarito('faca-retangulo', 'Faca Retangular')" style="padding: 8px; background: #b534ad; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-align: left;">✂️ + Faca Retangular</button>
-</div>
-                
-                <hr class="divisor">
-
-                <div id="painelPropriedades" style="display: none; flex-direction: column; gap: 12px;">
-                    <h4 id="lblItemSelecionado" style="font-size: 0.85rem; color: var(--gold-dark);">Item: Nenhum</h4>
-                    
-                    <div class="input-group">
-                        <label>Texto do Campo</label>
-                        <input type="text" id="editTextoValor">
-                    </div>
-
-                    <div class="input-group">
-                        <label>Fonte do Texto</label>
-                        <select id="editTextoFonte">
-                            <option value="Arial">Arial (Clássica)</option>
-                            <option value="'Times New Roman'">Times New Roman</option>
-                            <option value="'Courier New'">Courier New</option>
-                            <option value="Comic Sans MS">Comic Sans</option>
-                            <option value="Impact">Impact</option>
-                            <option value="Georgia">Georgia</option>
-                            <option value="Trebuchet MS">Trebuchet</option>
-                            <option value="Verdana">Verdana</option>
-                            <option value="'Brush Script MT'">Brush Script</option>
-                        </select>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Rotação do Nome</label>
-                        <input type="range" id="editTextoRotacao" min="0" max="360" value="0" step="1">
-                    </div>
-
-                    <div class="input-group">
-                        <label>Cor do Texto</label>
-                        <input type="color" id="editTextoCor" value="#ffffff">
-                    </div>
-                    
-                    <div class="input-group">
-                        <label>Tamanho da Fonte (pt)</label>
-                        <input type="number" id="editTextoTamanho" min="6" max="72" value="12">
-                    </div>
-
-                    <!-- 🔴 BOTÃO REINTEGRADO AQUI: Permite limpar gabarito para artes sem texto -->
-                    <button onclick="excluirTextoSelecionado()" style="padding: 10px; background: #d63031; border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; margin-top: 10px; width: 100%;">
-                        🗑️ Remover este Parâmetro
-                    </button>
+        <!-- ABA 1: EDIÇÃO SIMPLES (Painel Centralizado Estilo TUTU) -->
+        <section id="aba-edicao-simples" class="tutu-tab-content active">
+            <div class="tutu-card">
+                <div class="card-header">
+                    <h3>📄 Edição Simples & Parâmetros</h3>
+                    <button onclick="conectarGoogleDrive()" class="btn-sm-pasta">📂 Conectar Pasta</button>
                 </div>
-                
-                <button class="btn-print" onclick="fecharModal()" style="background: #2ecc71; margin-top: auto; padding: 12px; font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                    💾 Salvar e Aplicar Gabarito
-                </button>
-            </div>
-            
-            <div class="modal-preview" style="flex: 1; position: relative; background: #2c3e50;">
-                <div id="canvasEdicaoAdesivo" style="position: relative; background: white; box-shadow: 0 10px 20px rgba(0,0,0,0.3); overflow: hidden;">
-                    <!-- Preenchido via JS -->
+
+                <div class="card-grid-inputs">
+                    <!-- Seleção de Matriz -->
+                    <div class="input-block">
+                        <label>Matriz / Grade</label>
+                        <div style="display: flex; gap: 5px;">
+                            <select id="selectGradeDin" onchange="alternarExibicaoMatriz()" style="flex: 1;">
+                                <!-- Preenchido via JS -->
+                            </select>
+                            <button onclick="excluirGradeSelecionada()" title="Excluir Grade" class="btn-trash">🗑️</button>
+                        </div>
+                    </div>
+
+                    <!-- Nome / Texto -->
+                    <div class="input-block">
+                        <label>Nome do Aluno / Texto</label>
+                        <input type="text" id="txtNomeSimples" placeholder="Digite o nome..." oninput="atualizarTextoSimples()">
+                    </div>
+
+                    <!-- Série / Idade -->
+                    <div class="input-block">
+                        <label>Série / Idade</label>
+                        <input type="text" id="txtIdadeSimples" placeholder="Ex: 5 anos / 2º Ano" oninput="atualizarTextoSimples()">
+                    </div>
+
+                    <!-- Pedido / Obs -->
+                    <div class="input-block">
+                        <label>Nº Pedido / Observação</label>
+                        <div style="display: flex; gap: 5px;">
+                            <input type="text" id="inputPedido" placeholder="Nº Pedido" style="width: 40%;">
+                            <input type="text" id="inputCodBarrasManual" placeholder="Obs / Cód Barras" style="width: 60%;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ferramentas de Upload de Grades Personalizadas -->
+                <div class="card-footer-actions">
+                    <div style="display: flex; gap: 8px;">
+                        <label for="inputSubirSVG" class="btn-acao-upload svg">📄 Upar Grade SVG</label>
+                        <input type="file" id="inputSubirSVG" accept=".svg" onchange="processarUploadGradeSVG(event)" style="display: none;">
+
+                        
+                        <button onclick="abrirMenuNovaGrade()" class="btn-acao-upload manual">⚙️ Matriz Manual</button>
+                    </div>
+
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="executarImpressaoLote()" class="btn-tutu-gerar">⚡ Gerar & Imprimir PDF</button>
+                    </div>
+                </div>
+
+                <!-- Formulário de Nova Grade Manual (Escondido inicialmente) -->
+                <div id="formNovaGrade" style="display: none; background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 6px; margin-top: 15px;">
+                    <strong>Criar Nova Medida (mm)</strong>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px;">
+                        <input type="text" id="ng_nome" placeholder="Nome Ex: 3cm">
+                        <input type="number" id="ng_tam" placeholder="Diâmetro (mm)">
+                        <input type="number" id="ng_linhas" placeholder="Linhas">
+                        <input type="number" id="ng_cols" placeholder="Colunas">
+                        <input type="number" step="0.1" id="ng_gapX" placeholder="Gap X">
+                        <input type="number" step="0.1" id="ng_gapY" placeholder="Gap Y">
+                        <input type="number" step="0.1" id="ng_margX" placeholder="Margem Esq">
+                        <input type="number" step="0.1" id="ng_margY" placeholder="Margem Topo">
+                    </div>
+                    <button onclick="salvarNovaGradeMatriz()" style="margin-top: 10px; background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;">💾 Salvar Matriz</button>
                 </div>
             </div>
-            <!-- MODAL GRANDE PARA GERENCIAMENTO DE GRUPOS -->
 
-        </div>
-    </div>
-        <!-- COLOQUE AQUI NO FINAL DO INDEX.HTML -->
-<div id="modalGerenciadorGrupo" class="zoom-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 2000; justify-content: center; align-items: center;">
-    <div style="background: white; width: 85vw; height: 85vh; border-radius: 8px; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box;">
-        
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px;">
-            <h2 id="tituloModalGrupo" style="margin: 0; color: #2c3e50;">Adicionar Imagens ao Grupo</h2>
-            <button onclick="fecharModalGerenciadorGrupo()" style="background: #e74c3c; color: white; border: none; padding: 8px 15px; font-weight: bold; border-radius: 4px; cursor: pointer;">❌ Fechar</button>
-        </div>
-        
+           <!-- PREVIEW DA FOLHA CENTRALIZADO -->
+<div class="tutu-preview-wrapper" id="mainContent">
+    <p id="previewPlaceholder" style="color: #7f8c8d; font-style: italic; text-align: center; margin-top: 50px;">
+        Selecione uma arte e uma matriz para visualizar a folha de impressão.
+    </p>
+</div>
+        </section>
 
-        <!-- Barra de Busca + Filtro do Grupo -->
-        <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
-            <input type="text" id="buscaNomeModalGrupo" placeholder="🔍 Buscar imagem pelo nome no Drive..." oninput="filtrarImagensNoModalGrupo()" style="flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; box-sizing: border-box;">
-            
-            <!-- 🔥 NOVO FILTRO DE PERSISTÊNCIA VISUAL -->
-            <label style="display: flex; align-items: center; gap: 5px; background: #f8f9fa; padding: 10px 15px; border: 1px solid #ccc; border-radius: 6px; font-weight: bold; font-size: 13px; cursor: pointer; white-space: nowrap; user-select: none;">
-                <input type="checkbox" id="chkMostrarApenasGrupo" onchange="renderizarImagensNoModal()" style="width: 16px; height: 16px; cursor: pointer;">
-                📌 Mostrar apenas deste grupo
-            </label>
-        </div>
+        <!-- ABA 2: GERAR EM MASSA (Estilo Planilha/Lista do TUTU) -->
+        <section id="aba-gerar-massa" class="tutu-tab-content" style="display: none;">
+            <div class="tutu-card">
+                <div class="card-header">
+                    <h3>⚡ Gerador em Massa (Lista de Alunos / Pedidos)</h3>
+                </div>
+                <p style="font-size: 13px; color: #666; margin-bottom: 10px;">
+                    Cole sua lista abaixo separada por ponto e vírgula <code>;</code> ou quebras de linha. Formato: <code>Nome - Série - Escola</code> ou <code>Pedido, Nome, Série</code>.
+                </p>
+                <textarea id="txtListaAlunos" rows="8" placeholder="João Silva - 2º Ano - Escola ABC;&#10;Maria Souza - 1º Ano - Escola ABC;" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-family: monospace; font-size: 13px;"></textarea>
+                
+                <div style="margin-top: 15px; display: flex; justify-content: flex-end;">
+                    <button onclick="executarImpressaoLote()" class="btn-tutu-gerar">🖨️ Visualizar & Gerar Todas as Páginas</button>
+                </div>
+            </div>
+        </section>
 
-        <div id="gridImagensModalGrupo" style="flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e2e8f0;">
-            <!-- Preenchido via JS -->
-        </div>
-    </div>
+        <!-- ABA 3: PASTAS & GOOGLE DRIVE -->
+        <section id="aba-catalogo-pastas" class="tutu-tab-content" style="display: none;">
+            <div class="tutu-card">
+                <div class="card-header">
+                    <h3>📁 Gerenciamento de Pastas & Google Drive</h3>
+                    <button onclick="criarNovoGrupo()" class="btn-sm-pasta" style="background: #f39c12; color: white;">+ Criar Nova Pasta</button>
+                </div>
+                <div class="busca-container" style="margin-bottom: 15px;">
+                    <input type="text" id="searchInput" placeholder="🔍 Buscar arte pelo nome..." autocomplete="off">
+                </div>
+                <div id="imageGrid" class="tutu-pastas-grid">
+                    <!-- Preenchido via JS com as pastas e miniaturas -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL DE EDIÇÃO E GABARITO DE PARÂMETROS -->
+    <div id="editModal" class="zoom-modal" style="display: none;">
+        <div class="modal-container" style="width: 90vw; height: 85vh;">
+            <div class="modal-sidebar" style="width: 300px;">
+                <h3>Configurar Gabarito</h3>
+                <p style="font-size: 0.75rem; color: #666; margin-bottom: 10px;">Posicione os campos dinâmicos na arte.</p>
+                
+                <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+    <button onclick="adicionarCampoGabarito('txt-nome', 'Nome do Aluno')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">+ Nome</button>
+    <button onclick="adicionarCampoGabarito('txt-serie', 'Série / Idade')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">+ Série / Idade</button>
+    <button onclick="adicionarCampoGabarito('txt-escola', 'Escola / Obs')" style="padding: 8px; background: #3498db; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">+ Escola / Obs</button>
 </div>
 
-</body>
-</html>
+                <div id="painelPropriedades" style="display: none; flex-direction: column; gap: 8px;">
+                    <h4 id="lblItemSelecionado" style="font-size: 0.85rem; color: #d35400;">Item: Nenhum</h4>
+                    <label>Texto Teste</label>
+                    <input type="text" id="editTextoValor">
+                    <label>Tamanho (pt)</label>
+                    <input type="number" id="editTextoTamanho" min="6" max="72" value="12">
+                    <button onclick="excluirTextoSelecionado()" style="background: #e74c3c; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer;">🗑️ Remover Parâmetro</button>
+                </div>
+                
+                <button onclick="fecharModal()" style="background: #2ecc71; margin-top: auto; padding: 10px; font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer;">💾 Salvar Gabarito</button>
+            </div>
+            <div class="modal-preview" style="flex: 1; background: #1e293b; display: flex; justify-content: center; align-items: center;">
+                <div id="canvasEdicaoAdesivo" style="position: relative; background: white; box-shadow: 0 10px 20px rgba(0,0,0,0.3); overflow: hidden;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE GERENCIAMENTO DE IMAGENS DAS PASTAS -->
+    <div id="modalGerenciadorGrupo" class="zoom-modal" style="display: none;">
+        <div style="background: white; width: 80vw; height: 80vh; border-radius: 8px; display: flex; flex-direction: column; padding: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ddd; padding-bottom: 10px; margin-bottom: 15px;">
+                <h2 id="tituloModalGrupo" style="margin: 0; font-size: 18px;">Gerenciar Imagens da Pasta</h2>
+                <button onclick="fecharModalGerenciadorGrupo()" style="background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">❌ Fechar</button>
+            </div>
+            <div style="margin-bottom: 15px; display: flex; gap: 10px;">
+                <input type="text" id="buscaNomeModalGrupo" placeholder="🔍 Buscar imagem..." oninput="filtrarImagensNoModalGrupo()" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 6px;">
+                <label style="display: flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer;">
+                    <input type="checkbox" id="chkMostrarApenasGrupo" onchange="renderizarImagensNoModal()"> Mostrar apenas desta pasta
+                </label>
+            </div>
+            <div id="gridImagensModalGrupo" style="flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; padding: 5px;"></div>
+        </div>
+    </div>
+
 </body>
 </html>
